@@ -32,10 +32,14 @@ function handleSend(){
 
 //UI
 return (
-  <div>
-    <div>{messages.map((message) => (<p>message.text</p>))}</div>
-    <input value={input} onChange={(e)=>setInput(e.target.value)}/>
-    <button onClick={handleSend}>Send</button>
+  <div style={{display:'flex',flexDirection:'column', justifyContent:'center', margin:-15}}>
+    {/* Message Container */}
+    <div style={{padding:'20px', borderRadius:'15px', height:'70vh', width:'98vw', backgroundColor:"rgba(81, 83, 83, 1)"}}>{messages.map((message) => (<p key={message.id}>{message.from} : {message.text}</p>))}</div>
+    {/* Input Container */}
+    <div style={{display:'flex',flexDirection:'row', justifyContent:'center',width:'98vw'}}>
+      <input onKeyDown={(e) => {if (e.key === 'Enter' && e.ctrlKey) {handleSend();e.currentTarget.value = "";}}} autoFocus={true} style={{outline: 'none', boxShadow: 'none', padding: 10, backgroundColor: "rgba(81, 83, 83, 1)", width:"98vw", height:50, border:"solid", borderColor:"rgba(126, 128, 128, 1)", borderWidth:"1px", borderRadius:10 }} value={input} onChange={(e)=>setInput(e.target.value)}/>
+      <button onClick={handleSend} style={{borderRadius:5, borderWidth:'1px', marginLeft:'10px', padding:'10px', backgroundColor:"rgb(105, 143, 149)", height:'50px'}}>Send</button>
+  </div>
   </div>
 );
 }
