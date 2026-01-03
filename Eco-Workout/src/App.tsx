@@ -28,6 +28,14 @@ const callGeminiAction = useAction(api.myFunctions.callGemniniAPI);
   const [messages,setMessages] = useState<Message[]>([]);
   const [input,setInput] = useState("")
 //functions
+function parseGeminiJSON(text: string) {
+  try {
+    let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch (error) {
+    console.error("Parse error. Raw text:", text);
+    throw new Error("Failed to parse AI response");
+  }}
 async function handleSend(){    //sending input
   if(input==='')return;
   const newMessage={id:Date.now(),text:input,from:'user'}

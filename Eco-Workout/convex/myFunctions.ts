@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { query, mutation, action } from "./_generated/server";
 import { api } from "./_generated/api";
-import {GoogleGenerativeAI} from '@google/generative-ai'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { WORKOUT_PARSER_PROMPT } from './prompt'
 
 // Write your Convex functions in any file inside this directory (`convex`).
 // See https://docs.convex.dev/functions for more.
@@ -11,7 +12,10 @@ const apiKey=process.env.GEMINI_API_KEY
 if(!apiKey){throw Error("GEMINI_API_KEY Not Set")}
 const genAi=new GoogleGenerativeAI(apiKey);
 const model = genAi.getGenerativeModel({model: 'gemma-3-4b-it'});
+//const model = genAi.getGenerativeModel({model: 'gemini-2.5-flash'});
 
+//system prompt stuff
+const systemPrompt=WORKOUT_PARSER_PROMPT
 
 // You can read data from the database via a query:
 export const listNumbers = query({
@@ -61,14 +65,14 @@ export const addNumber = mutation({
 export const callGemniniAPI = action({
   // Validators for arguments.
   args: {
-    userInput: v.string(),
+    userInput: v.string()
   },
 
   // Action implementation.
   handler: async (ctx, args) => {
   try{
-    const result= await model.generateContent(args.userInput)
-    console.log('AI response & details:',result)
+    const result= await model.generateContent('System Prompt: '+systemPrompt+'/n user: '+args.userInput)
+    //console.log('AI response & details:',result)
     return result.response.text();
   }
   catch(error){
