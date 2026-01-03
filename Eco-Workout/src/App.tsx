@@ -34,7 +34,11 @@ function parseGeminiJSON(text: string) {
     return JSON.parse(cleaned);
   } catch (error) {
     console.error("Parse error. Raw text:", text);
-    throw new Error("Failed to parse AI response");
+    return ({
+      action:'chat_response',
+      data:null,
+      message:text
+    })
   }}
 async function handleSend(){    //sending input
   if(input==='')return;
