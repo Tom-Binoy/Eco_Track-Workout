@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useAction } from 'convex/react';
+import { api } from '../convex/_generated/api'
+//Arrays
 type Message={
   id:number;
   text:string;
   from:string;
 }
-
 export default function App() {
   return (
     <>
@@ -20,14 +22,27 @@ export default function App() {
 }
 
 function Content() {
+//API stuff
+const callGeminiAction = useAction(api.myFunctions.callGemniniAPI);
+
   const [messages,setMessages] = useState<Message[]>([]);
   const [input,setInput] = useState("")
 //functions
-function handleSend(){
+async function handleSend(){    //sending input
   if(input==='')return;
   const newMessage={id:Date.now(),text:input,from:'user'}
-  setMessages([...messages, newMessage,{id:Date.now()+1,text:"Hey there, I'm Eco. Your Workout Assistant.",from:'ai'}])//Wouldn't both user and AI have same id this way?
+  const aiThinking={id:Date.now()+1,text:'Eco is thinking...',from:'ai'}
+  setMessages([...messages, newMessage,aiThinking])
   setInput('')
+  //Api Call
+  try{
+    const response = await callGeminiAction({userInput:input})
+  setMessages(prev =>[...prev.slice(0,-1),{id:Date.now(),text:response,from:'ai'}])
+  }catch(error){
+    const response ='Sorry, I encountered an Error. Please try again.'
+    console.error("Convex Action Error: ",error)
+  setMessages(prev =>[...prev.slice(0,-1),{id:Date.now(),text:response,from:'ai'}])
+  }
 }
 
 //UI
