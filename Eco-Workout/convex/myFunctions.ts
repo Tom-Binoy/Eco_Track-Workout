@@ -7,6 +7,8 @@ import { WORKOUT_PARSER_PROMPT } from './prompt'
 // Write your Convex functions in any file inside this directory (`convex`).
 // See https://docs.convex.dev/functions for more.
 
+//user auth
+const fakeId='user_01'
 //API stuff
 const apiKey=process.env.GEMINI_API_KEY
 if(!apiKey){throw Error("GEMINI_API_KEY Not Set")}
@@ -28,36 +30,43 @@ export const listNumbers = query({
   handler: async (ctx, args) => {
     //// Read the database as many times as you need here.
     //// See https://docs.convex.dev/database/reading-data.
-    const numbers = await ctx.db
-      .query("numbers")
+    const workouts = await ctx.db
+      .query("workouts")
       // Ordered by _creationTime, return most recent
       .order("desc")
       .take(args.count);
     return {
       viewer: (await ctx.auth.getUserIdentity())?.name ?? null,
-      numbers: numbers.reverse().map((number) => number.value),
+      workouts: workouts.reverse().map((workout) => workout),
     };
   },
 });
 
 // You can write data to the database via a mutation:
-export const addNumber = mutation({
+export const addWorkout = mutation({
   // Validators for arguments.
   args: {
-    value: v.number(),
+    exercises: v.array(v.object({
+    name: v.string(),
+    sets: v.number(),
+    reps: v.optional(v.number()),
+    weight: v.optional(v.number()),
+    unit: v.string(),
+    duration: v.optional(v.number()),
+    distance: v.optional(v.number())}))
   },
 
   // Mutation implementation.
   handler: async (ctx, args) => {
-    //// Insert or modify documents in the database here.
-    //// Mutations can also read from the database like queries.
-    //// See https://docs.convex.dev/database/writing-data.
 
-    const id = await ctx.db.insert("numbers", { value: args.value });
+    const workoutId = await ctx.db.insert("workouts", { userId:fakeId, timestamp: Date.now() });  // Don't forget to add 'notes' filed later.
+    for (const ex of args.exercises) {
+      await ctx.db.insert("exercises",{workoutId:workoutId,...ex})
+    }
 
-    console.log("Added new document with id:", id);
+    console.log("Added new document with id:", workoutId);
     // Optionally, return a value from your mutation.
-    // return id;
+    return workoutId;
   },
 });
 

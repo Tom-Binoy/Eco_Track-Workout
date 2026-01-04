@@ -1,11 +1,21 @@
 import { useState } from 'react';
 import { useAction } from 'convex/react';
+import { useMutation } from 'convex/react'
 import { api } from '../convex/_generated/api'
 //Arrays
 type Message={
   id:number;
   text:string;
   from:string;
+}
+type Exercises={
+  name: string;
+  sets: number;
+  reps?: number;
+  weight?: number;
+  unit: string;
+  duration?: number;
+  distance?: number;
 }
 export default function App() {
   return (
@@ -24,11 +34,13 @@ export default function App() {
 function Content() {
 //API stuff
 const callGeminiAction = useAction(api.myFunctions.callGemniniAPI);
+const addWorkout = useMutation(api.myFunctions.addWorkout)
 
   const [messages,setMessages] = useState<Message[]>([]);
   const [input,setInput] = useState("")
+  const [draftExercise,setDraftExercise] = useState<Exercises[]>([]);
 //functions
-function parseGeminiJSON(text: string) {
+function parseGeminiJSON(text: string) {//Cleaning AI response form Markdown.
   try {
     let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     return JSON.parse(cleaned);
@@ -40,6 +52,21 @@ function parseGeminiJSON(text: string) {
       message:text
     })
   }}
+async function handleSave(){  //Saving it to DB after confirmation
+  //JSON from AI
+  setDraftExercise([
+    { name: "bench_press", sets: 3, reps: 10, weight: 60, unit: "kg" },
+    { name: "plank", sets: 2, duration: 60, unit: "sec" }
+  ])
+  //calls mutation to save to DB
+  try {
+    const id = await addWorkout({exercises: draftExercise})
+    console.log("Sucess! Workout sved with ID: ",id)
+    alert("Workout Saved Successfully!")
+  } catch(error){
+    console.error("Save failed: ", error)
+  }
+}
 async function handleSend(){    //sending input
   if(input==='')return;
   const newMessage={id:Date.now(),text:input,from:'user'}
@@ -60,6 +87,7 @@ async function handleSend(){    //sending input
 //UI
 return (
   <div style={{display:'flex',flexDirection:'column', justifyContent:'center', margin:-15}}>
+    <button style={{borderRadius:5, borderWidth:'1px', marginLeft:'10px', padding:'10px', backgroundColor:"rgb(105, 143, 149)", height:'50px'}} onClick={handleSave}>Test handleSave</button>
     {/* Message Container */}
     <div style={{padding:'20px', borderRadius:'15px', height:'70vh', width:'98vw', backgroundColor:"rgba(81, 83, 83, 1)"}}>{messages.map((message) => (<p key={message.id}>{message.from} : {message.text}</p>))}</div>
     {/* Input Container */}
