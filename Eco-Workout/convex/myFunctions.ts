@@ -47,7 +47,7 @@ export const addWorkout = mutation({
   // Validators for arguments.
   args: {
     exercises: v.array(v.object({
-    name: v.string(),
+    exerciseName: v.string(),
     sets: v.number(),
     reps: v.optional(v.number()),
     weight: v.optional(v.number()),

@@ -24,7 +24,7 @@ export default defineSchema({
   //3. The Actual Data
   exercises: defineTable({
     workoutId: v.id("workouts"),  //links to the specific session
-    name: v.string(),
+    exerciseName: v.string(),
     sets: v.number(),
     reps: v.optional(v.number()),
     weight: v.optional(v.number()),

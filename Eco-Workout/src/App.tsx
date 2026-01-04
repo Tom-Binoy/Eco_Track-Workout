@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAction } from 'convex/react';
 import { useMutation } from 'convex/react'
 import { api } from '../convex/_generated/api'
+import { workoutArraySchema } from './lib/validations';
 //Arrays
 type Message={
   id:number;
@@ -9,7 +10,7 @@ type Message={
   from:string;
 }
 type Exercises={
-  name: string;
+  exerciseName: string;
   sets: number;
   reps?: number;
   weight?: number;
@@ -52,11 +53,23 @@ function parseGeminiJSON(text: string) {//Cleaning AI response form Markdown.
       message:text
     })
   }}
+function validateAiOutput(rawAiOutput: any){
+  //gets the data field out of JSON
+  const rawData = rawAiOutput.data
+  const dataAsArray = Array.isArray(rawData)?rawData: rawData? [rawData]: [];
+  try{
+    return workoutArraySchema.parse(dataAsArray);
+  }catch(error){
+    console.error("Zod validation error: ",error)
+    alert("The AI returned bad data, simply regenerate please.")
+    return [];
+  }
+}
 async function handleSave(){  //Saving it to DB after confirmation
   //JSON from AI
   setDraftExercise([
-    { name: "bench_press", sets: 3, reps: 10, weight: 60, unit: "kg" },
-    { name: "plank", sets: 2, duration: 60, unit: "sec" }
+    { exerciseName: "bench_press", sets: 3, reps: 10, weight: 60, unit: "kg" },
+    { exerciseName: "plank", sets: 2, duration: 60, unit: "sec" }
   ])
   //calls mutation to save to DB
   try {

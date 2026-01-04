@@ -22,7 +22,7 @@ Reasoning Step: Before outputting JSON, mentally categorize each number:
 - *only use one of the 3*
 
 # Schema
-{"action": "string", "data": [{"exercise": string, "sets": int, "reps": int, "weight": int, "unit": string, "duration": int, "distance": int}], "message": string}
+{"action": "string", "data": [{"exerciseName": string, "sets": int, "reps": int, "weight": int, "unit": string, "duration": int, "distance": int}], "message": string}
 
 # Correction Examples
 User: "jogged to gym, 20 pushups"
