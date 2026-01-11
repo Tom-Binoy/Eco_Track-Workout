@@ -16,7 +16,7 @@ export type Exercises={
   metricType: 'reps' | 'duration' | 'distance';
   metricValue: number;
   weight?: number;
-  weightUnit?: string;
+  weightUnit?: 'kg' | 'lbs' | undefined;
 }
 export default function App() {
   return (
@@ -78,7 +78,7 @@ function handleNextExercise(e:React.FormEvent<HTMLFormElement>){
     metricType: formData.get('metricType') as 'reps' | 'distance' | 'duration',
     metricValue: Number(formData.get('metricValue')),
     weight: formData.get('weight')? Number(formData.get('weight')): undefined,
-    weightUnit: formData.get('weightUnit')? String(formData.get('weightUnit')): undefined
+    weightUnit: formData.get('weightUnit')? (String(formData.get('weightUnit')) as 'kg' | 'lbs'): undefined
   }
   setConfirmedExercises([...confirmedExercises,updatedExercise])
   // 3. Logic for Next vs. Save
