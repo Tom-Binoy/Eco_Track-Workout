@@ -26,10 +26,20 @@ export default defineSchema({
     workoutId: v.id("workouts"),  //links to the specific session
     exerciseName: v.string(),
     sets: v.number(),
-    reps: v.optional(v.number()),
+    metricType: v.union(
+      v.literal('reps'),
+      v.literal('distance'),
+      v.literal('duration')),
+    metricValue: v.number(),
     weight: v.optional(v.number()),
-    unit: v.string(),
-    duration: v.optional(v.number()),
-    distance: v.optional(v.number())
-  }).index('by_workout',["workoutId"])
+    weightUnit: v.optional(v.union( v.literal('kg'), v.literal('lbs')))
+  }).index('by_workout',["workoutId"]),
+  
+  //4. The AI Corrections Log
+  aiFeedback: defineTable({
+    feedbackId: v.string(),//v.id("userId"),
+    corrections: v.array(v.any()),
+    systemPrompt: v.string(),
+    timestamp: v.number()
+  })
 });

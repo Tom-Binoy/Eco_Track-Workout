@@ -16,6 +16,7 @@
 3. star jumps 30s, 30 pushups, 300m sprint,50kg squats 20, hollow hold 3x30s.
 4. jogged to gym, dumbel curls 2x10 10kg, forearm reverse curl 2x10 8kg, forearm curl 10kg 2x20, finished with pushups 30 with 10kg.
 5. jogged to gym, 50kg squats 2x30, side steps 2x30, single-leg calf raises 2x30 each leg, shin curl 2x30 of 10kg. 5min rest between all.
+6. jogged to gym, dumbbell curls 2x10 10kg, forearm curl 10kg 2x20, 300m sprint, 50kg squats 20, hollow hold 3x30s Am I cutting it? 
 >Edge cases:
 1. skipped gym today, was tired
 2. how much did I bench last week?

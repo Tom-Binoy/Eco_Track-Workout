@@ -46,21 +46,24 @@ export const listNumbers = query({
 export const addWorkout = mutation({
   // Validators for arguments.
   args: {
-    exercises: v.array(v.object({
+    data: v.array(v.object({
     exerciseName: v.string(),
     sets: v.number(),
-    reps: v.optional(v.number()),
+    metricType: v.union(
+      v.literal('reps'),
+      v.literal('duration'),
+      v.literal('distance')
+    ),
+    metricValue: v.number(),
     weight: v.optional(v.number()),
-    unit: v.string(),
-    duration: v.optional(v.number()),
-    distance: v.optional(v.number())}))
-  },
+    weightUnit: v.optional(v.union(v.literal('kg'),v.literal('lbs')))
+  },))},
 
   // Mutation implementation.
   handler: async (ctx, args) => {
 
     const workoutId = await ctx.db.insert("workouts", { userId:fakeId, timestamp: Date.now() });  // Don't forget to add 'notes' filed later.
-    for (const ex of args.exercises) {
+    for (const ex of args.data) {
       await ctx.db.insert("exercises",{workoutId:workoutId,...ex})
     }
 
@@ -69,6 +72,16 @@ export const addWorkout = mutation({
     return workoutId;
   },
 });
+
+//AI Feedback Mutation
+export const aiFeedback= mutation({
+  args:{
+    corrections:v.array(v.any())
+  },
+  handler: async (ctx, args) =>{
+    await ctx.db.insert('aiFeedback',{feedbackId:fakeId, systemPrompt:WORKOUT_PARSER_PROMPT, corrections:args.corrections, timestamp: Date.now()})
+  }
+})
 
 // You can fetch data from and send data to third-party APIs via an action:
 export const callGemniniAPI = action({
@@ -81,7 +94,7 @@ export const callGemniniAPI = action({
   handler: async (ctx, args) => {
   try{
     const result= await model.generateContent('System Prompt: '+systemPrompt+'/n user: '+args.userInput)
-    //console.log('AI response & details:',result)
+    console.log('AI response & details:',result)
     return result.response.text();
   }
   catch(error){
