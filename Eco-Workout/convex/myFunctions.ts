@@ -87,20 +87,21 @@ export const aiFeedback= mutation({
 //Chat Session Mutation
 export const updateSession= mutation({
   args:{
-    messages:v.array(v.object({
-      role: v.string(), //v.union(v.literal('user'),v.literal('ai')) change to user_name and ai_name later.
-      content: v.string(),
-      workoutData: v.optional(v.any()),  //JSON here
-      isConfirmed: v.optional(v.boolean())
+    turns:v.array(v.object({
+      id: v.string(),
+      timestamp: v.number(),
+      user: v.string(),
+      response: v.string(),
+      workoutData: v.optional(v.any())
     })),
     chatId:v.optional(v.id('chats'))
   },
   handler: async (ctx, args) =>{
     if(!args.chatId){
-      const chatId= await ctx.db.insert('chats',{userId:fakeId, chatStart: Date.now(),chatLast: Date.now(),messages: args.messages})
+      const chatId= await ctx.db.insert('chats',{userId:fakeId, chatStart: Date.now(),chatLast: Date.now(), turns: args.turns})
       return chatId;
     }else{
-      await ctx.db.patch('chats', args.chatId,{userId:fakeId, chatLast: Date.now(), messages: args.messages}) //use chat ID to update the chat doc.
+      await ctx.db.patch('chats', args.chatId,{userId:fakeId, chatLast: Date.now(), turns: args.turns}) //use chat ID to update the chat doc.
     }
   }
 })

@@ -48,11 +48,12 @@ export default defineSchema({
     userId: v.string(), //change back to v.id('userId')
     chatStart: v.optional(v.number()),
     chatLast: v.number(),
-    messages: v.array(v.object({
-      role: v.string(), //v.union(v.literal('user'),v.literal('ai')), use user_name and ai_name instead
-      content: v.string(),
-      workoutData: v.optional(v.any()),  //JSON here
-      isConfirmed: v.optional(v.boolean())
+    turns: v.array(v.object({
+      id: v.string(),
+      timestamp: v.number(),
+      user: v.string(),
+      response: v.string(),
+      workoutData: v.optional(v.any())
     })),
     summary:v.optional(v.string())
   }).index('by_user',['userId'])
