@@ -8,5 +8,6 @@ export const exerciseSchema = z.object({
     metricValue: z.coerce.number(),
     weight: z.coerce.number().nullable().optional().transform((val)=> (val === 0||val ===null? undefined:val)),
     weightUnit: z.enum(['kg','lbs']).nullable().optional().transform((val)=> (val === null? undefined:val)), //later change this to user preference
+    status: z.enum(['pending', 'editing', 'confirmed']).default('pending')
 })
 export const workoutArraySchema = z.array(exerciseSchema)

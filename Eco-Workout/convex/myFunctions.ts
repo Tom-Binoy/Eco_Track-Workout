@@ -79,7 +79,29 @@ export const aiFeedback= mutation({
     corrections:v.array(v.any())
   },
   handler: async (ctx, args) =>{
-    await ctx.db.insert('aiFeedback',{feedbackId:fakeId, systemPrompt:WORKOUT_PARSER_PROMPT, corrections:args.corrections, timestamp: Date.now()})
+    const feedbackId = await ctx.db.insert('aiFeedback',{userId:fakeId, systemPrompt:WORKOUT_PARSER_PROMPT, corrections:args.corrections, timestamp: Date.now()})
+    return feedbackId;
+  }
+})
+
+//Chat Session Mutation
+export const updateSession= mutation({
+  args:{
+    messages:v.array(v.object({
+      role: v.string(), //v.union(v.literal('user'),v.literal('ai')) change to user_name and ai_name later.
+      content: v.string(),
+      workoutData: v.optional(v.any()),  //JSON here
+      isConfirmed: v.optional(v.boolean())
+    })),
+    chatId:v.optional(v.id('chats'))
+  },
+  handler: async (ctx, args) =>{
+    if(!args.chatId){
+      const chatId= await ctx.db.insert('chats',{userId:fakeId, chatStart: Date.now(),chatLast: Date.now(),messages: args.messages})
+      return chatId;
+    }else{
+      await ctx.db.patch('chats', args.chatId,{userId:fakeId, chatLast: Date.now(), messages: args.messages}) //use chat ID to update the chat doc.
+    }
   }
 })
 
@@ -92,14 +114,17 @@ export const callGemniniAPI = action({
 
   // Action implementation.
   handler: async (ctx, args) => {
-  try{
-    const result= await model.generateContent('System Prompt: '+systemPrompt+'/n user: '+args.userInput)
-    console.log('AI response & details:',result)
-    return result.response.text();
-  }
-  catch(error){
-    console.error("API error",error)
-    return 'Sorry, I encountered an Error. Please Try again!'
-}
+    try {
+      const result = await model.generateContent('System Prompt: ' + systemPrompt + '/n user: ' + args.userInput);
+      console.log('AI response & details:', result);
+      return result.response.text();
+    } catch (error) {
+      console.error("API error", error);
+      return 'Sorry, I encountered an Error. Please Try again!';
+    }
   },
 });
+
+// Export the new functions for backward compatibility
+export { getRecent, create } from './workouts';
+export { parseWorkout } from './ai';

@@ -37,9 +37,23 @@ export default defineSchema({
   
   //4. The AI Corrections Log
   aiFeedback: defineTable({
-    feedbackId: v.string(),//v.id("userId"),
+    userId: v.string(),//v.id("userId"),
     corrections: v.array(v.any()),
     systemPrompt: v.string(),
     timestamp: v.number()
-  })
+  }).index('by_user',['userId']),
+
+  //5. Chat Session Table
+  chats: defineTable({
+    userId: v.string(), //change back to v.id('userId')
+    chatStart: v.optional(v.number()),
+    chatLast: v.number(),
+    messages: v.array(v.object({
+      role: v.string(), //v.union(v.literal('user'),v.literal('ai')), use user_name and ai_name instead
+      content: v.string(),
+      workoutData: v.optional(v.any()),  //JSON here
+      isConfirmed: v.optional(v.boolean())
+    })),
+    summary:v.optional(v.string())
+  }).index('by_user',['userId'])
 });
