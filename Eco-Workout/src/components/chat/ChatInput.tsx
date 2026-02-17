@@ -29,7 +29,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
         onKeyDown={handleKeyDown}
         placeholder="Tell me about your workout... (Ctrl+Enter to send)"
         disabled={isLoading}
-        className="flex-1 max-w-2xl px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+        className="flex-1 text-black max-w-2xl px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
         autoFocus
       />
       <button

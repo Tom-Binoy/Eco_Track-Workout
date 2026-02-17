@@ -8,8 +8,10 @@
  * @module
  */
 
+import type * as ai from "../ai.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as prompt from "../prompt.js";
+import type * as workouts from "../workouts.js";
 
 import type {
   ApiFromModules,
@@ -18,8 +20,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  ai: typeof ai;
   myFunctions: typeof myFunctions;
   prompt: typeof prompt;
+  workouts: typeof workouts;
 }>;
 
 /**

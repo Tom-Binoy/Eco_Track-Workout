@@ -16,11 +16,11 @@ export function ChatMessageComponent({ message, isLatest, isLoading }: ChatMessa
   return (
     <div className="mb-8">
       <div className="flex flex-col gap-2">
-        <p className="font-medium">
+        <p className="font-medium text-gray-600">
           <span className="text-blue-600">{userName}:</span> {message.content}
         </p>
         {!isUser && (
-          <div className="font-medium">
+          <div className="font-medium text-gray-600">
             <span className="text-green-600">{aiName}:</span>{' '}
             {isLoading ? <LoadingSpinner /> : message.content}
           </div>
