@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Exercise } from '../../types';
 
 export interface CardProps extends Exercise {
@@ -9,6 +10,10 @@ export interface CardProps extends Exercise {
 export const TILT_ANGLES = [0, 3, -3, 6, -6];
 
 export function ExerciseCard(props: CardProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedName, setEditedName] = useState(props.exerciseName);
+  const [isHovered, setIsHovered] = useState(false);
+
   const rotation = TILT_ANGLES[props.index];
   const stackStyles = props.isStack ? {
     position: 'absolute' as const,
@@ -17,13 +22,71 @@ export function ExerciseCard(props: CardProps) {
     transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
   } : {};
 
+  const handleSave = () => {
+    setIsEditing(false);
+    // TODO: Call parent callback to update the exercise name
+  };
+
+  const handleCancel = () => {
+    setEditedName(props.exerciseName);
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    } else if (e.key === 'Escape') {
+      handleCancel();
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200" style={stackStyles}>
-      <span className="font-bold text-gray-800">Exercise Name: {props.exerciseName}</span>
+      <div 
+        className="relative inline-block"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {isEditing ? (
+          <input
+            type="text"
+            value={editedName}
+            onChange={(e) => setEditedName(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={handleKeyDown}
+            className="font-bold text-gray-800 border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            autoFocus
+          />
+        ) : (
+          <button
+            onClick={() => setIsEditing(true)}
+            className={`font-bold text-gray-800 text-left transition-colors rounded px-2 py-1 -m-2 ${
+              isHovered ? 'bg-gray-100' : ''
+            }`}
+          >
+            Exercise Name: {editedName}
+            {isHovered && (
+              <svg 
+                className="inline-block w-4 h-4 ml-2 text-gray-500" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" 
+                />
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
       <div className="flex flex-row justify-left flex-wrap gap-2 mt-2">
         <div className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
           <input 
-            className="w-16 px-2 py-1 border border-gray-300 rounded text-sm" 
+            className="w-16 px-2 py-1 border text-gray-800 border-gray-300 rounded text-sm" 
             name='sets' 
             defaultValue={props.sets} 
             type="number" 
@@ -33,14 +96,14 @@ export function ExerciseCard(props: CardProps) {
         
         <div className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
           <input 
-            className="w-16 px-2 py-1 border border-gray-300 rounded text-sm" 
+            className="w-16 px-2 py-1 border text-gray-800 border-gray-300 rounded text-sm" 
             name='metricValue' 
             defaultValue={props.metricValue}
           />
           <select 
             name='metricType' 
             defaultValue={props.metricType}
-            className="px-2 py-1 border border-gray-300 rounded text-sm"
+            className="px-2 py-1 border text-gray-800 border-gray-300 rounded text-sm"
           >
             <option value='reps'>Reps</option>
             <option value='distance'>Distance (km)</option>
@@ -51,7 +114,7 @@ export function ExerciseCard(props: CardProps) {
         {props.weight && (
           <div className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
             <input 
-              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm" 
+              className="w-16 px-2 py-1 border text-gray-800 border-gray-300 rounded text-sm" 
               name='weight' 
               defaultValue={props.weight} 
               type="number" 
@@ -59,7 +122,7 @@ export function ExerciseCard(props: CardProps) {
             <select 
               name='weightUnit' 
               defaultValue={props.weightUnit}
-              className="px-2 py-1 border border-gray-300 rounded text-sm"
+              className="px-2 py-1 border text-grey-800 border-gray-300 rounded text-sm"
             >
               <option value='kg'>Kg</option>
               <option value='lbs'>lbs</option>
