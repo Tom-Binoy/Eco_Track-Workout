@@ -3,7 +3,7 @@ import { ChatContainer } from './chat/ChatContainer';
 import { ChatInput } from './chat/ChatInput';
 
 export function AppContent() {
-  const { turns, isLoading, sendMessage } = useChat();
+  const { turns, isLoading, sendMessage, injectMockData } = useChat();
 
   const handleSendMessage = async (message: string) => {
     await sendMessage(message);
@@ -21,6 +21,11 @@ export function AppContent() {
     // This will eventually clear the latest turn and reset the chat input
   };
 
+  const handleTestCards = () => {
+    console.log('AppContent: Testing cards with mock data');
+    injectMockData();
+  };
+
   return (
     <div className="flex flex-col h-screen max-h-[800px]">
       <ChatContainer 
@@ -28,6 +33,7 @@ export function AppContent() {
         isLoading={isLoading}
         onWorkoutConfirm={handleWorkoutConfirm}
         onWorkoutRetry={handleWorkoutRetry}
+        onTestCards={handleTestCards}
       />
       <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
     </div>

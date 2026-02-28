@@ -29,3 +29,54 @@
 3. Eco guess what? I did the same as last time. Surprissingly the exact same.
 4. I totally forgot the figures for yesterdays gym. But I did the bench, and the squat meachine.
 5. Can you tell me what to do? I'm stuck
+
+
+
+## Prompt for v0 dev
+Create a mobile-first AI workout tracker chat interface called "Eco Track".
+
+LAYOUT:
+- Header: "Eco Track" title, menu icon (right)
+- Main: Scrollable chat area with conversation cards
+- Bottom: Fixed input area with text field + send button
+
+CONVERSATION CARDS (key feature):
+Each card shows a workout exchange:
+- User message at top right (smaller, gray text)
+- AI response below it to the left (medium text)
+- Workout summary card with exercises (all fields below are editable):
+  * Exercise name
+  * Sets, MetricType (reps, duration, distance), MetricValue, (weight, along with its unit if present)
+- If latest card stack: "Looks Good 💪" (soft green) + "Delete" (soft red) buttons
+- If history (saved cards): no buttons, read-only
+
+FLOW:
+- Exercise Cards are presented as a stack, with a tilt for each card below the first one.
+- Confirmed cards moveup, and forms a list above the stack.
+- Deleted cards are removed from the stack, and the card fades out.
+- When action is applied to the top card, the next card in the stack moves up, fixing the tilt, and the process repeats.
+- Cards in the history list are read-only.
+
+INPUT AREA:
+- Rounded text field: "Tell Eco about your workout..."
+- Send button (icon)
+- Support Ctrl+Enter to send
+
+DESIGN:
+- Clean, modern, lots of white space
+- Mobile-optimized (max-width: 640px)
+- Tailwind CSS + shadcn/ui style
+- Subtle shadows, rounded corners
+- Blue accent color (#3B82F6)
+
+EXAMPLE CONVERSATION:
+User: "Did 20 archer pushups"
+AI: "Nice! How many sets?"
+Workout card shows:
+- Exercise Name: Archer Pushups
+- Sets: 1 (input, ≥1)
+- MetricValue: 20 (input, ≥1)
+- MetricType: reps (dropdown of reps, duration, distance)
+- Weight: 0 (input, ≥0, if 0, then WeightUnit & weight is hidden)
+- WeightUnit: kg (dropdown of kg, lbs)
+[Looks Good 💪] [Delete]

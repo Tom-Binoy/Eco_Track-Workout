@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ConversationTurn } from '../../types';
 import { ExerciseCard } from '../workout/ExerciseCard';
-import { LoadingSpinner } from '../ui/LoadingSpinner';
 
 interface ConversationTurnCardProps {
   turn: ConversationTurn;
@@ -12,9 +11,34 @@ interface ConversationTurnCardProps {
 }
 
 export function ConversationTurnCard({ turn, isLatest, isLoading, onConfirm, onRetry }: ConversationTurnCardProps) {
-  const [isSaving, setIsSaving] = useState(false);
+  const [animatingCardIndex, setAnimatingCardIndex] = useState<number | null>(null);
+  const [animationType, setAnimationType] = useState<'save' | 'delete'>('save');
   const userName = 'user';
   const aiName = 'Eco';
+
+  const handleConfirm = () => {
+    // Start save animation for topmost card only
+    setAnimatingCardIndex(0);
+    setAnimationType('save');
+    
+    // After animation, call parent callback
+    setTimeout(() => {
+      onConfirm?.(turn.workoutData || []);
+      setAnimatingCardIndex(null); // Reset animation state
+    }, 600);
+  };
+
+  const handleDelete = () => {
+    // Start delete animation for topmost card only
+    setAnimatingCardIndex(0);
+    setAnimationType('delete');
+    
+    // After animation, call parent callback
+    setTimeout(() => {
+      onRetry?.();
+      setAnimatingCardIndex(null); // Reset animation state
+    }, 600);
+  };
 
   return (
     <div className="mb-8">
@@ -29,7 +53,7 @@ export function ConversationTurnCard({ turn, isLatest, isLoading, onConfirm, onR
       <div className="flex flex-col gap-2">
         <p className="font-medium text-gray-600">
           <span className="text-green-600">{aiName}:</span>{' '}
-          {isLoading && isLatest ? <LoadingSpinner /> : turn.response}
+          {isLoading && isLatest ? 'Thinking...' : turn.response}
         </p>
       </div>
       
@@ -38,6 +62,8 @@ export function ConversationTurnCard({ turn, isLatest, isLoading, onConfirm, onR
         <div className={`mt-4 ${isLatest ? 'relative h-40' : 'flex flex-col gap-2'}`}>
           {turn.workoutData.map((workout, index) => {
             const isStack = isLatest;
+            const isAnimating = animatingCardIndex !== null && index === 0;
+            
             return (
               <ExerciseCard
                 key={index}
@@ -45,42 +71,14 @@ export function ConversationTurnCard({ turn, isLatest, isLoading, onConfirm, onR
                 index={index}
                 total={turn.workoutData?.length ?? 0}
                 isStack={isStack}
+                isLatest={isLatest}
+                onConfirm={handleConfirm}
+                onDelete={handleDelete}
+                isAnimating={isAnimating}
+                animationType={animationType}
               />
             );
           })}
-          
-          {/* Confirm/Cancel Buttons - Only show for latest turn with workout data */}
-          {isLatest && (
-            <div className="flex flex-col md:flex-row gap-3 mt-6">
-              <button
-                onClick={() => {
-                  setIsSaving(true);
-                  onConfirm?.(turn.workoutData || []);
-                }}
-                disabled={isSaving}
-                className="bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white font-medium px-6 py-3 rounded-lg transition-colors flex items-center justify-center gap-2 min-h-[48px]"
-              >
-                {isSaving ? (
-                  <>
-                    <LoadingSpinner />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    Looks Good 💪
-                  </>
-                )}
-              </button>
-              
-              <button
-                onClick={() => onRetry?.()}
-                disabled={isSaving}
-                className="bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 text-gray-700 font-medium px-6 py-3 rounded-lg transition-colors min-h-[48px]"
-              >
-                Try Again
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>

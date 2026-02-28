@@ -252,6 +252,30 @@ Store auth token (localStorage)
         ↓
 [User sees chat interface]
 ```
+## 4. Workout Confirmation Flow
+
+1. User sends message
+2. AI parses → Creates ConversationTurn with workoutData
+3. ChatMessage renders with:
+   - If isLatest=true AND workoutData exists:
+     * Exercise names editable (inline, editable-cue visible)
+     * Shows action buttons on the side
+   - Else (history):
+     * Read-only display
+     * No buttons
+
+4. User actions:
+   - "Looks Good" → Saves to workouts table, isLatest=false
+   - "Delete" → Deletes the card.
+   - Edit name → Updates workoutData in memory (not saved until confirm)
+
+5. After confirm:
+   - Card becomes read-only and move up (smooth animation).
+   - Appears in history
+   - Input/Card ready for next workout
+6. After delete:
+   - Card deleted from memory and moves down disappearing (smooth animation).
+   - Input/Card ready for next workout
 
 ---
 

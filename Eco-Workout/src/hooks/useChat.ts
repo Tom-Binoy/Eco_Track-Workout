@@ -62,12 +62,55 @@ export function useChat() {
     setChatId(undefined);
   };
 
+  const injectMockData = (): void => {
+    const mockWorkoutData = [
+      {
+        exerciseName: "Pushups",
+        sets: 3,
+        metricType: 'reps' as const,
+        metricValue: 20,
+        weight: undefined,
+        weightUnit: undefined,
+        status: 'pending' as const
+      },
+      {
+        exerciseName: "Squats",
+        sets: 3,
+        metricType: 'reps' as const,
+        metricValue: 15,
+        weight: 50,
+        weightUnit: 'kg' as const,
+        status: 'pending' as const
+      },
+      {
+        exerciseName: "Running",
+        sets: 1,
+        metricType: 'distance' as const,
+        metricValue: 2,
+        weight: undefined,
+        weightUnit: undefined,
+        status: 'pending' as const
+      }
+    ];
+
+    const mockTurn: ConversationTurn = {
+      id: Date.now().toString(),
+      timestamp: Date.now(),
+      user: "did 20 pushups, 15 squats with 50kg, and ran 2km",
+      response: "Great workout! I've logged your exercises.",
+      workoutData: mockWorkoutData
+    };
+
+    setTurns([mockTurn]);
+  };
+
   return {
     turns,
     isLoading,
     input,
     setInput,
     sendMessage,
-    clearTurns
+    clearTurns,
+    injectMockData
   };
 }
