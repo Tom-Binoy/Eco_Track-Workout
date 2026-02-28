@@ -1,4 +1,17 @@
 import { useState, useRef, useEffect } from "react";
+import { Message, Card } from "./types";
+
+// ─── Props interface ───────────────────────────────────────────
+// ChatUI knows nothing about Convex, Gemini, or any backend.
+// It just renders what it's given and calls callbacks.
+interface EcoChatProps {
+  messages: Message[];
+  isTyping: boolean;
+  isLoading: boolean;
+  onSend: (text: string) => Promise<void>;
+  onConfirmCard: (messageId: string, cardId: number, data: Partial<Card>) => void;
+  onDiscardCard: (messageId: string, cardId: number) => void;
+}
 
 // ─── Claude.ai exact color tokens ─────────────────────────────
 const THEMES = {
@@ -55,13 +68,13 @@ const THEMES = {
 };
 
 // ─── Guardrails ────────────────────────────────────────────────
-const clampInt = (v, min = 1) => { const n = parseInt(v, 10); return isNaN(n) ? min : Math.max(min, n); };
-const clampDec = (v, min = 0, dp = 2) => { const n = parseFloat(v); if (isNaN(n)) return min; return Math.max(min, Math.round(n * 10 ** dp) / 10 ** dp); };
-const parseMetric = (v, type) => type === "distance" ? clampDec(v, 0.01, 2) : clampInt(v, 1);
+const clampInt = (v: any, min = 1) => { const n = parseInt(v, 10); return isNaN(n) ? min : Math.max(min, n); };
+const clampDec = (v: any, min = 0, dp = 2) => { const n = parseFloat(v); if (isNaN(n)) return min; return Math.max(min, Math.round(n * 10 ** dp) / 10 ** dp); };
+const parseMetric = (v: any, type: string) => type === "distance" ? clampDec(v, 0.01, 2) : clampInt(v, 1);
 
 // ─── Confirmed history row ─────────────────────────────────────
-function HistoryRow({ card, T }) {
-  const wt = parseFloat(card.weight);
+function HistoryRow({ card, T }: { card: Card; T: typeof THEMES.light }) {
+  const wt = parseFloat(String(card.weight));
   const sfx = card.metricType === "distance" ? "km" : card.metricType === "duration" ? "s" : "";
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: T.confirmBg, border: `1px solid ${T.confirmBorder}`, borderRadius: "10px", gap: "12px", minHeight: "44px" }}>
@@ -79,7 +92,12 @@ function HistoryRow({ card, T }) {
 }
 
 // ─── Notification card ─────────────────────────────────────────
-function NotifCard({ pending, confirmed, onOpen, T }) {
+function NotifCard({ pending, confirmed, onOpen, T }: {
+  pending: Card[];
+  confirmed: Card[];
+  onOpen: () => void;
+  T: typeof THEMES.light;
+}) {
   return (
     <button onClick={onOpen}
       style={{ display: "flex", alignItems: "center", gap: "12px", width: "100%", padding: "12px 16px", textAlign: "left", cursor: "pointer", background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: "12px", boxShadow: T.cardShadow, transition: "all 0.2s cubic-bezier(0.165,0.85,0.45,1)", fontFamily: "Georgia, serif", minHeight: "52px" }}
@@ -105,15 +123,23 @@ function NotifCard({ pending, confirmed, onOpen, T }) {
 }
 
 // ─── Modal editable card ───────────────────────────────────────
-function ModalCard({ card, isTop, stackIndex, total, onConfirm, onDiscard, T }) {
+function ModalCard({ card, isTop, stackIndex, total, onConfirm, onDiscard, T }: {
+  card: Card;
+  isTop: boolean;
+  stackIndex: number;
+  total: number;
+  onConfirm: (id: number, data: Partial<Card>) => void;
+  onDiscard: (id: number) => void;
+  T: typeof THEMES.light;
+}) {
   const [data, setData] = useState({ ...card });
-  const wt = parseFloat(data.weight);
+  const wt = parseFloat(String(data.weight));
   const metricLabel = data.metricType === "reps" ? "REPS" : data.metricType === "duration" ? "SECS" : "KM";
   const TILT = [0, 2.2, -1.8, 3.5, -2.5];
   const tilt = isTop ? 0 : TILT[Math.min(stackIndex, TILT.length - 1)];
 
-  const upd = (f, v) => setData(d => ({ ...d, [f]: v }));
-  const commit = (f, v) => {
+  const upd = (f: string, v: any) => setData(d => ({ ...d, [f]: v }));
+  const commit = (f: string, v: any) => {
     const val = f === "sets" ? clampInt(v, 1) : f === "weight" ? clampDec(v, 0, 2) : f === "metricValue" ? parseMetric(v, data.metricType) : v;
     setData(d => ({ ...d, [f]: val }));
   };
@@ -136,7 +162,7 @@ function ModalCard({ card, isTop, stackIndex, total, onConfirm, onDiscard, T }) 
           ].map(({ label, field, value, step, min }) => (
             <div key={field} style={{ background: T.subBg, borderRadius: "10px", padding: "10px 12px" }}>
               <p style={{ margin: "0 0 2px", fontSize: "8px", fontWeight: 700, color: T.textFaint, textTransform: "uppercase", letterSpacing: "0.12em" }}>{label}</p>
-              <input type="number" value={value} step={step} min={min} disabled={!isTop}
+              <input type="number" value={value as number} step={step} min={min} disabled={!isTop}
                 onChange={e => upd(field, e.target.value)} onBlur={e => commit(field, e.target.value)}
                 style={{ border: "none", outline: "none", background: "transparent", fontFamily: "'Bebas Neue', sans-serif", fontSize: "26px", letterSpacing: "0.03em", color: field === "weight" && wt === 0 ? T.textFaint : (isTop ? T.text : T.textFaint), padding: 0, width: "100%" }} />
               {field === "weight" && wt === 0 && isTop && (
@@ -148,7 +174,7 @@ function ModalCard({ card, isTop, stackIndex, total, onConfirm, onDiscard, T }) 
 
         {isTop && (
           <div style={{ display: "flex", gap: "6px" }}>
-            {["reps", "duration", "distance"].map(t => (
+            {(["reps", "duration", "distance"] as const).map(t => (
               <button key={t} onClick={() => upd("metricType", t)}
                 style={{ flex: 1, padding: "8px 6px", borderRadius: "8px", border: "none", cursor: "pointer", fontFamily: "Georgia, serif", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s cubic-bezier(0.165,0.85,0.45,1)", minHeight: "36px",
                   background: data.metricType === t ? T.accent : T.subBg,
@@ -185,18 +211,24 @@ function ModalCard({ card, isTop, stackIndex, total, onConfirm, onDiscard, T }) 
 }
 
 // ─── Card stack modal ──────────────────────────────────────────
-function CardModal({ cards, onClose, onConfirm, onDiscard, T }) {
+function CardModal({ cards, onClose, onConfirm, onDiscard, T }: {
+  cards: Card[];
+  onClose: () => void;
+  onConfirm: (id: number, data: Partial<Card>) => void;
+  onDiscard: (id: number) => void;
+  T: typeof THEMES.light;
+}) {
   const pending = cards.filter(c => c.state === "pending");
-  const [exitId, setExitId] = useState(null);
+  const [exitId, setExitId] = useState<number | null>(null);
   const [exitDir, setExitDir] = useState("up");
 
   useEffect(() => {
-    const handler = e => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const triggerExit = (id, dir, cb) => {
+  const triggerExit = (id: number, dir: string, cb: (id: number) => void) => {
     setExitDir(dir); setExitId(id);
     setTimeout(() => { setExitId(null); cb(id); }, 420);
   };
@@ -258,31 +290,28 @@ function CardModal({ cards, onClose, onConfirm, onDiscard, T }) {
 }
 
 // ─── Root ──────────────────────────────────────────────────────
-export default function ChatUI() {
+export default function ChatUI({
+  messages,
+  isTyping,
+  isLoading,
+  onSend,
+  onConfirmCard,
+  onDiscardCard,
+}: EcoChatProps) {
   const [darkMode, setDarkMode] = useState(false);
   const T = THEMES[darkMode ? "dark" : "light"];
 
-  const [cards, setCards] = useState([
-    { id: 1, exerciseName: "bench press",  sets: 3, metricType: "reps",     metricValue: 10,  weight: 80,  weightUnit: "kg", state: "pending" },
-    { id: 2, exerciseName: "pull ups",     sets: 4, metricType: "reps",     metricValue: 8,   weight: 0,   weightUnit: "kg", state: "pending" },
-    { id: 3, exerciseName: "morning run",  sets: 1, metricType: "distance", metricValue: 5.5, weight: 0,   weightUnit: "kg", state: "pending" },
-  ]);
-
-  const [msgs, setMsgs] = useState([
-    { id: 1, role: "eco",  text: "Good to see you. What did you train today?" },
-    { id: 2, role: "user", text: "bench press 3x10 at 80kg, pull ups 4 sets of 8, and a 5.5km run" },
-    { id: 3, role: "eco",  text: "Three exercises — great session. Bench press matches last week's weight.", hasCards: true },
-  ]);
+  // Which message's modal is open (null = closed)
+  const [modalMessageId, setModalMessageId] = useState<string | null>(null);
 
   const [val, setVal]         = useState("");
-  const [typing, setTyping]   = useState(false);
-  const [modalOpen, setModal] = useState(false);
-  const bottomRef   = useRef(null);
-  const textareaRef = useRef(null);
+  const bottomRef             = useRef<HTMLDivElement>(null);
+  const textareaRef           = useRef<HTMLTextAreaElement>(null);
 
+  // Auto-scroll to bottom when messages update or typing indicator changes
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs, typing, cards]);
+  }, [messages, isTyping]);
 
   const resizeTextarea = () => {
     const el = textareaRef.current;
@@ -291,24 +320,19 @@ export default function ChatUI() {
     el.style.height = Math.min(el.scrollHeight, 140) + "px";
   };
 
-  const handleConfirm = (id, data) => setCards(cs => cs.map(c => c.id === id ? { ...c, ...data, state: "confirmed" } : c));
-  const handleDiscard = id          => setCards(cs => cs.map(c => c.id === id ? { ...c, state: "discarded" } : c));
-
   const send = () => {
-    if (!val.trim()) return;
+    if (!val.trim() || isTyping) return;
     const text = val.trim();
-    setMsgs(m => [...m, { id: Date.now(), role: "user", text }]);
     setVal("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-    setTyping(true);
-    setTimeout(() => {
-      setTyping(false);
-      setMsgs(m => [...m, { id: Date.now() + 1, role: "eco", text: "Got it — confirm the card when you're ready." }]);
-    }, 1300);
+    onSend(text);
   };
 
-  const pending   = cards.filter(c => c.state === "pending");
-  const confirmed = cards.filter(c => c.state === "confirmed");
+  // Cards for the currently open modal
+  const modalMessage = modalMessageId
+    ? messages.find(m => m.id === modalMessageId)
+    : null;
+  const modalCards = modalMessage?.cards ?? [];
 
   return (
     <div style={{ minHeight: "100dvh", background: T.bg, display: "flex", flexDirection: "column", transition: "background 0.3s ease" }}>
@@ -326,7 +350,7 @@ export default function ChatUI() {
       `}</style>
       <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-      {/* ── Header ────────────────────────────────────────── */}
+      {/* ── Header ───────────────────────────────────────────── */}
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
         backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
@@ -336,12 +360,9 @@ export default function ChatUI() {
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: "0 56px",
       }}>
-        {/* Chat name — centred like Claude.ai */}
         <p style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: "14px", fontWeight: 600, color: T.text, letterSpacing: "0.01em", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          Today's Session
+          {isLoading ? "Loading..." : "Today's Session"}
         </p>
-
-        {/* Theme toggle — top right */}
         <button onClick={() => setDarkMode(d => !d)}
           style={{ position: "absolute", right: "12px", width: "36px", height: "36px", borderRadius: "50%", border: `1px solid ${T.border}`, background: T.toggleBg, fontSize: "16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s cubic-bezier(0.165,0.85,0.45,1)" }}
           onMouseEnter={e => e.currentTarget.style.transform = "scale(1.08)"}
@@ -350,54 +371,63 @@ export default function ChatUI() {
         </button>
       </div>
 
-      {/* ── Feed ──────────────────────────────────────────── */}
+      {/* ── Feed ─────────────────────────────────────────────── */}
       <div style={{ flex: 1, paddingBottom: "170px", paddingTop: "52px" }}>
         <div style={{ maxWidth: "680px", margin: "0 auto", padding: "32px 16px 0" }}>
 
-          {msgs.map((msg, idx) => {
-            const isEco  = msg.role === "eco";
-            const isUser = msg.role === "user";
+          {/* Empty state */}
+          {messages.length === 0 && !isLoading && (
+            <p style={{ fontFamily: "Georgia, serif", fontSize: "15px", color: T.textMuted, textAlign: "center", marginTop: "48px" }}>
+              What did you train today?
+            </p>
+          )}
+
+          {/* Message pairs */}
+          {messages.map(msg => {
+            const msgPending   = (msg.cards ?? []).filter(c => c.state === "pending");
+            const msgConfirmed = (msg.cards ?? []).filter(c => c.state === "confirmed");
 
             return (
-              <div key={msg.id} style={{ marginBottom: isEco ? "24px" : "10px", animation: "fadeUp 0.28s ease" }}>
-
-                {/* Eco response — no label at all */}
-                {isEco && (
-                  <div>
-                    {msg.text && (
-                      <p style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: 400, color: T.text, lineHeight: 1.75, marginBottom: msg.hasCards ? "12px" : 0 }}>
-                        {msg.text}
-                      </p>
-                    )}
-                    {msg.hasCards && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                        {/* Confirmed rows stack above notif */}
-                        {confirmed.map(c => <HistoryRow key={c.id} card={c} T={T} />)}
-                        {/* Notification persists until all confirmed */}
-                        {pending.length > 0 && (
-                          <NotifCard pending={pending} confirmed={confirmed} onOpen={() => setModal(true)} T={T} />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
+              <div key={msg.id} style={{ marginBottom: "24px", animation: "fadeUp 0.28s ease" }}>
 
                 {/* User bubble — right-aligned */}
-                {isUser && (
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <div style={{ maxWidth: "78%", padding: "11px 16px", borderRadius: "18px 18px 4px 18px", background: T.userBubble, boxShadow: `0 1px 3px ${T.borderSubtle}` }}>
-                      <p style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: 400, color: T.userText, lineHeight: 1.7 }}>
-                        {msg.text}
-                      </p>
-                    </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "10px" }}>
+                  <div style={{ maxWidth: "78%", padding: "11px 16px", borderRadius: "18px 18px 4px 18px", background: T.userBubble, boxShadow: `0 1px 3px ${T.borderSubtle}` }}>
+                    <p style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: 400, color: T.userText, lineHeight: 1.7 }}>
+                      {msg.user}
+                    </p>
                   </div>
-                )}
+                </div>
+
+                {/* Eco reply */}
+                <div>
+                  {msg.eco && (
+                    <p style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: 400, color: T.text, lineHeight: 1.75, marginBottom: msg.cards && msg.cards.length > 0 ? "12px" : 0 }}>
+                      {msg.eco}
+                    </p>
+                  )}
+
+                  {/* Exercise cards for this message */}
+                  {msg.cards && msg.cards.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {msgConfirmed.map(c => <HistoryRow key={c.id} card={c} T={T} />)}
+                      {msgPending.length > 0 && (
+                        <NotifCard
+                          pending={msgPending}
+                          confirmed={msgConfirmed}
+                          onOpen={() => setModalMessageId(msg.id)}
+                          T={T}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
 
           {/* Typing dots */}
-          {typing && (
+          {isTyping && (
             <div style={{ marginBottom: "24px", animation: "fadeUp 0.28s ease" }}>
               <div style={{ display: "flex", gap: "5px", alignItems: "center", height: "24px" }}>
                 {[0, 1, 2].map(i => (
@@ -411,10 +441,9 @@ export default function ChatUI() {
         </div>
       </div>
 
-      {/* ── Composer ──────────────────────────────────────── */}
+      {/* ── Composer ──────────────────────────────────────────── */}
       <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50 }}>
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "150px", background: `linear-gradient(to top, ${T.bg} 50%, transparent)`, pointerEvents: "none" }} />
-
         <div style={{ position: "relative", maxWidth: "680px", margin: "0 auto", padding: `0 16px calc(20px + env(safe-area-inset-bottom))` }}>
           <div style={{ background: T.composer, borderRadius: "16px", border: `1px solid ${T.border}`, boxShadow: T.composerShadow, overflow: "hidden" }}>
             <div style={{ padding: "14px 16px 0" }}>
@@ -427,18 +456,18 @@ export default function ChatUI() {
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
                 }}
                 placeholder="What did you train today?"
+                disabled={isTyping || isLoading}
                 style={{ border: "none", outline: "none", background: "transparent", width: "100%", resize: "none", overflow: "hidden", fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: 400, color: T.text, lineHeight: 1.65, display: "block" }}
               />
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px 10px" }}>
-              {/* Fixed hint */}
               <span style={{ fontFamily: "Georgia, serif", fontSize: "11px", color: T.textFaint }}>
-                Shift + Enter for new line
+                Enter to send · Shift+Enter for new line
               </span>
-              <button onClick={send} disabled={!val.trim()}
-                style={{ width: "36px", height: "36px", borderRadius: "10px", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: val.trim() ? "pointer" : "default", background: val.trim() ? T.accent : T.subBg, color: val.trim() ? "#fff" : T.textFaint, transition: "all 0.2s cubic-bezier(0.165,0.85,0.45,1)", boxShadow: val.trim() ? `0 2px 8px ${T.accentGlow}` : "none", fontSize: "16px", flexShrink: 0 }}
+              <button onClick={send} disabled={!val.trim() || isTyping}
+                style={{ width: "36px", height: "36px", borderRadius: "10px", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: val.trim() && !isTyping ? "pointer" : "default", background: val.trim() && !isTyping ? T.accent : T.subBg, color: val.trim() && !isTyping ? "#fff" : T.textFaint, transition: "all 0.2s cubic-bezier(0.165,0.85,0.45,1)", boxShadow: val.trim() ? `0 2px 8px ${T.accentGlow}` : "none", fontSize: "16px", flexShrink: 0 }}
                 onMouseEnter={e => { if (val.trim()) { e.currentTarget.style.transform = "scale(1.05)"; e.currentTarget.style.background = T.accentHover; } }}
-                onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.background = val.trim() ? T.accent : T.subBg; }}>
+                onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.background = val.trim() && !isTyping ? T.accent : T.subBg; }}>
                 ↑
               </button>
             </div>
@@ -449,9 +478,15 @@ export default function ChatUI() {
         </div>
       </div>
 
-      {/* ── Modal ─────────────────────────────────────────── */}
-      {modalOpen && (
-        <CardModal cards={cards} onClose={() => setModal(false)} onConfirm={handleConfirm} onDiscard={handleDiscard} T={T} />
+      {/* ── Modal ─────────────────────────────────────────────── */}
+      {modalMessageId && (
+        <CardModal
+          cards={modalCards}
+          onClose={() => setModalMessageId(null)}
+          onConfirm={(cardId, data) => onConfirmCard(modalMessageId, cardId, data)}
+          onDiscard={(cardId) => onDiscardCard(modalMessageId, cardId)}
+          T={T}
+        />
       )}
     </div>
   );
