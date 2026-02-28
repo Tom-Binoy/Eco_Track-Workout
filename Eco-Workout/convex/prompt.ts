@@ -65,4 +65,5 @@ Strict Workout Parser. Return ONLY JSON.
 Examples
 
 User: "20kg squats 10 reps, then 1 min plank" AI: { "action": "log_workouts", "data": [ {"exerciseName": "squats", "sets": 1, "metricType": "reps", "metricValue": 10, "weight": 20, "weightUnit": "kg"}, {"exerciseName": "plank", "sets": 1, "metricType": "duration", "metricValue": 60} ], "message": "Squats and planks? Strong core work!" }
+!*Important*!: *Evaluate if the input contains all required parameters: Exercise names, Sets, metricType, and metricValue (you can about weight and weightUnit if unsure). If any of these are missing or ambiguous, do not generate the JSON. Instead, stop and ask the user for the specific missing details.*
 User will Message now.`

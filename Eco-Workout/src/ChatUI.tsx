@@ -1,0 +1,458 @@
+import { useState, useRef, useEffect } from "react";
+
+// ─── Claude.ai exact color tokens ─────────────────────────────
+const THEMES = {
+  light: {
+    bg:            "#F5F5F0",
+    composer:      "#FFFFFF",
+    composerShadow:"0 0.25rem 1.25rem rgba(0,0,0,0.055)",
+    text:          "#1a1a18",
+    textMuted:     "#6b6a68",
+    textFaint:     "#a8a5a0",
+    userBubble:    "#DDD9CE",
+    userText:      "#1a1a18",
+    border:        "rgba(0,0,0,0.08)",
+    borderSubtle:  "rgba(0,0,0,0.04)",
+    cardBg:        "#FFFFFF",
+    cardShadow:    "0 0.25rem 1.25rem rgba(0,0,0,0.055), 0 1px 3px rgba(0,0,0,0.04)",
+    subBg:         "#F5F5F0",
+    accent:        "#16a34a",
+    accentHover:   "#15803d",
+    accentGlow:    "rgba(22,163,74,0.18)",
+    toggleBg:      "#e8e5dd",
+    confirmBg:     "#f0fdf4",
+    confirmBorder: "#d1fae5",
+    confirmText:   "#166534",
+    confirmMuted:  "#4ade80",
+    headerBg:      "rgba(245,245,240,0.85)",
+    headerBorder:  "rgba(0,0,0,0.06)",
+  },
+  dark: {
+    bg:            "#2b2a27",
+    composer:      "#1f1e1b",
+    composerShadow:"0 0.25rem 1.25rem rgba(0,0,0,0.28)",
+    text:          "#eeeeee",
+    textMuted:     "#9a9893",
+    textFaint:     "#5a5855",
+    userBubble:    "#393937",
+    userText:      "#eeeeee",
+    border:        "rgba(255,255,255,0.08)",
+    borderSubtle:  "rgba(255,255,255,0.04)",
+    cardBg:        "#302f2c",
+    cardShadow:    "0 0.25rem 1.25rem rgba(0,0,0,0.32), 0 1px 3px rgba(0,0,0,0.2)",
+    subBg:         "#252420",
+    accent:        "#22c55e",
+    accentHover:   "#16a34a",
+    accentGlow:    "rgba(34,197,94,0.2)",
+    toggleBg:      "#3a3936",
+    confirmBg:     "#0d1f13",
+    confirmBorder: "#14532d",
+    confirmText:   "#4ade80",
+    confirmMuted:  "#166534",
+    headerBg:      "rgba(43,42,39,0.85)",
+    headerBorder:  "rgba(255,255,255,0.06)",
+  },
+};
+
+// ─── Guardrails ────────────────────────────────────────────────
+const clampInt = (v, min = 1) => { const n = parseInt(v, 10); return isNaN(n) ? min : Math.max(min, n); };
+const clampDec = (v, min = 0, dp = 2) => { const n = parseFloat(v); if (isNaN(n)) return min; return Math.max(min, Math.round(n * 10 ** dp) / 10 ** dp); };
+const parseMetric = (v, type) => type === "distance" ? clampDec(v, 0.01, 2) : clampInt(v, 1);
+
+// ─── Confirmed history row ─────────────────────────────────────
+function HistoryRow({ card, T }) {
+  const wt = parseFloat(card.weight);
+  const sfx = card.metricType === "distance" ? "km" : card.metricType === "duration" ? "s" : "";
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: T.confirmBg, border: `1px solid ${T.confirmBorder}`, borderRadius: "10px", gap: "12px", minHeight: "44px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+        <span style={{ color: T.accent, fontSize: "12px", flexShrink: 0 }}>✓</span>
+        <span style={{ fontFamily: "Georgia, serif", fontSize: "14px", fontWeight: 600, color: T.confirmText, textTransform: "capitalize", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {card.exerciseName}
+        </span>
+      </div>
+      <span style={{ fontFamily: "Georgia, serif", fontSize: "12px", color: T.confirmMuted, flexShrink: 0 }}>
+        {card.sets}×{card.metricValue}{sfx}{wt > 0 ? ` · ${card.weight}${card.weightUnit}` : " · bw"}
+      </span>
+    </div>
+  );
+}
+
+// ─── Notification card ─────────────────────────────────────────
+function NotifCard({ pending, confirmed, onOpen, T }) {
+  return (
+    <button onClick={onOpen}
+      style={{ display: "flex", alignItems: "center", gap: "12px", width: "100%", padding: "12px 16px", textAlign: "left", cursor: "pointer", background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: "12px", boxShadow: T.cardShadow, transition: "all 0.2s cubic-bezier(0.165,0.85,0.45,1)", fontFamily: "Georgia, serif", minHeight: "52px" }}
+      onMouseEnter={e => { e.currentTarget.style.boxShadow = `${T.cardShadow}, 0 0 0 2px ${T.accentGlow}`; e.currentTarget.style.transform = "translateY(-1px)"; }}
+      onMouseLeave={e => { e.currentTarget.style.boxShadow = T.cardShadow; e.currentTarget.style.transform = ""; }}>
+      <div style={{ position: "relative", width: "10px", height: "10px", flexShrink: 0 }}>
+        <div style={{ position: "absolute", inset: "-5px", borderRadius: "50%", background: T.accent, opacity: 0.2, animation: "ripple 2.2s infinite" }} />
+        <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: T.accent }} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <p style={{ margin: 0, fontSize: "14px", fontWeight: 600, color: T.text }}>
+          {pending.length} exercise{pending.length !== 1 ? "s" : ""} ready to confirm
+        </p>
+        {confirmed.length > 0 && (
+          <p style={{ margin: "2px 0 0", fontSize: "12px", color: T.textMuted }}>
+            {confirmed.length} already logged
+          </p>
+        )}
+      </div>
+      <span style={{ fontSize: "18px", color: T.textFaint }}>›</span>
+    </button>
+  );
+}
+
+// ─── Modal editable card ───────────────────────────────────────
+function ModalCard({ card, isTop, stackIndex, total, onConfirm, onDiscard, T }) {
+  const [data, setData] = useState({ ...card });
+  const wt = parseFloat(data.weight);
+  const metricLabel = data.metricType === "reps" ? "REPS" : data.metricType === "duration" ? "SECS" : "KM";
+  const TILT = [0, 2.2, -1.8, 3.5, -2.5];
+  const tilt = isTop ? 0 : TILT[Math.min(stackIndex, TILT.length - 1)];
+
+  const upd = (f, v) => setData(d => ({ ...d, [f]: v }));
+  const commit = (f, v) => {
+    const val = f === "sets" ? clampInt(v, 1) : f === "weight" ? clampDec(v, 0, 2) : f === "metricValue" ? parseMetric(v, data.metricType) : v;
+    setData(d => ({ ...d, [f]: val }));
+  };
+
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: total - stackIndex, transform: isTop ? "none" : `translateY(${stackIndex * 9}px) rotate(${tilt}deg)`, transition: "transform 0.4s cubic-bezier(0.34,1.2,0.64,1)" }}>
+      <div style={{ background: T.cardBg, borderRadius: "20px", border: `1px solid ${T.border}`, padding: "22px", boxShadow: isTop ? T.cardShadow : "none", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: "14px", fontFamily: "Georgia, serif" }}>
+
+        <div>
+          <p style={{ margin: "0 0 3px", fontSize: "10px", fontWeight: 700, color: T.textFaint, textTransform: "uppercase", letterSpacing: "0.12em" }}>Exercise</p>
+          <input value={data.exerciseName} disabled={!isTop} onChange={e => upd("exerciseName", e.target.value)}
+            style={{ border: "none", outline: "none", background: "transparent", fontFamily: "'Bebas Neue', sans-serif", fontSize: "32px", letterSpacing: "0.04em", color: isTop ? T.text : T.textFaint, width: "100%", padding: 0 }} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+          {[
+            { label: "SETS",      field: "sets",        value: data.sets,        step: 1,    min: 1 },
+            { label: metricLabel, field: "metricValue", value: data.metricValue, step: data.metricType === "distance" ? 0.01 : 1, min: data.metricType === "distance" ? 0.01 : 1 },
+            { label: wt > 0 ? `WT · ${data.weightUnit}` : "WEIGHT", field: "weight", value: data.weight, step: 0.01, min: 0 },
+          ].map(({ label, field, value, step, min }) => (
+            <div key={field} style={{ background: T.subBg, borderRadius: "10px", padding: "10px 12px" }}>
+              <p style={{ margin: "0 0 2px", fontSize: "8px", fontWeight: 700, color: T.textFaint, textTransform: "uppercase", letterSpacing: "0.12em" }}>{label}</p>
+              <input type="number" value={value} step={step} min={min} disabled={!isTop}
+                onChange={e => upd(field, e.target.value)} onBlur={e => commit(field, e.target.value)}
+                style={{ border: "none", outline: "none", background: "transparent", fontFamily: "'Bebas Neue', sans-serif", fontSize: "26px", letterSpacing: "0.03em", color: field === "weight" && wt === 0 ? T.textFaint : (isTop ? T.text : T.textFaint), padding: 0, width: "100%" }} />
+              {field === "weight" && wt === 0 && isTop && (
+                <p style={{ margin: "-4px 0 0", fontSize: "9px", color: T.textFaint }}>bodyweight</p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {isTop && (
+          <div style={{ display: "flex", gap: "6px" }}>
+            {["reps", "duration", "distance"].map(t => (
+              <button key={t} onClick={() => upd("metricType", t)}
+                style={{ flex: 1, padding: "8px 6px", borderRadius: "8px", border: "none", cursor: "pointer", fontFamily: "Georgia, serif", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s cubic-bezier(0.165,0.85,0.45,1)", minHeight: "36px",
+                  background: data.metricType === t ? T.accent : T.subBg,
+                  color:      data.metricType === t ? "#fff"    : T.textMuted }}>
+                {t === "duration" ? "Time" : t}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isTop ? (
+          <div style={{ display: "flex", gap: "8px", marginTop: "auto" }}>
+            <button onClick={() => onDiscard(card.id)}
+              style={{ padding: "12px 18px", borderRadius: "10px", border: `1px solid ${T.border}`, background: "transparent", color: T.textMuted, fontFamily: "Georgia, serif", fontWeight: 600, fontSize: "14px", cursor: "pointer", minHeight: "48px", transition: "all 0.15s cubic-bezier(0.165,0.85,0.45,1)" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "#fca5a5"; e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.background = "rgba(239,68,68,0.06)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted; e.currentTarget.style.background = "transparent"; }}>
+              Discard
+            </button>
+            <button onClick={() => onConfirm(card.id, data)}
+              style={{ flex: 1, padding: "12px", borderRadius: "10px", border: "none", background: T.accent, color: "#fff", fontFamily: "Georgia, serif", fontWeight: 700, fontSize: "15px", cursor: "pointer", minHeight: "48px", boxShadow: `0 3px 14px ${T.accentGlow}`, transition: "all 0.2s cubic-bezier(0.165,0.85,0.45,1)" }}
+              onMouseEnter={e => { e.currentTarget.style.background = T.accentHover; e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = `0 6px 20px ${T.accentGlow}`; }}
+              onMouseLeave={e => { e.currentTarget.style.background = T.accent; e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = `0 3px 14px ${T.accentGlow}`; }}>
+              Confirm ✓
+            </button>
+          </div>
+        ) : (
+          <p style={{ textAlign: "center", fontSize: "12px", color: T.textFaint, marginTop: "auto" }}>
+            {stackIndex} more in stack
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Card stack modal ──────────────────────────────────────────
+function CardModal({ cards, onClose, onConfirm, onDiscard, T }) {
+  const pending = cards.filter(c => c.state === "pending");
+  const [exitId, setExitId] = useState(null);
+  const [exitDir, setExitDir] = useState("up");
+
+  useEffect(() => {
+    const handler = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const triggerExit = (id, dir, cb) => {
+    setExitDir(dir); setExitId(id);
+    setTimeout(() => { setExitId(null); cb(id); }, 420);
+  };
+
+  const visible = pending.slice(0, 4);
+
+  return (
+    <div onClick={e => e.target === e.currentTarget && onClose()}
+      style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 20px",
+        backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+        background: T.bg === "#F5F5F0" ? "rgba(245,245,240,0.82)" : "rgba(43,42,39,0.88)",
+        animation: "fadeIn 0.22s ease" }}>
+
+      <button onClick={onClose}
+        style={{ position: "absolute", top: "20px", right: "20px", width: "40px", height: "40px", borderRadius: "50%", border: `1px solid ${T.border}`, background: T.cardBg, color: T.textMuted, fontSize: "18px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Georgia, serif", boxShadow: T.cardShadow, transition: "all 0.15s cubic-bezier(0.165,0.85,0.45,1)", zIndex: 10 }}
+        onMouseEnter={e => { e.currentTarget.style.background = T.subBg; e.currentTarget.style.color = T.text; }}
+        onMouseLeave={e => { e.currentTarget.style.background = T.cardBg; e.currentTarget.style.color = T.textMuted; }}>
+        ✕
+      </button>
+
+      {pending.length > 0 && (
+        <div style={{ position: "absolute", top: "26px", left: 0, right: 0, textAlign: "center", pointerEvents: "none" }}>
+          <span style={{ fontFamily: "Georgia, serif", fontSize: "12px", color: T.textFaint, letterSpacing: "0.04em" }}>
+            {pending.length} to confirm · Esc to close
+          </span>
+        </div>
+      )}
+
+      {pending.length > 0 ? (
+        <div style={{ position: "relative", width: "100%", maxWidth: "360px", height: "420px" }}>
+          {[...visible].reverse().map((card, ri) => {
+            const si = visible.length - 1 - ri;
+            const isTop = si === 0;
+            const isExiting = card.id === exitId;
+            return (
+              <div key={card.id} style={{ position: "absolute", inset: 0, zIndex: visible.length - si,
+                transform: isExiting ? (exitDir === "up" ? "translateY(-130%) rotate(-6deg) scale(0.9)" : "translateX(130%) rotate(12deg) scale(0.88)") : "none",
+                opacity: isExiting ? 0 : 1,
+                transition: isExiting ? "all 0.42s cubic-bezier(0.22,1,0.36,1)" : "none" }}>
+                <ModalCard card={card} isTop={isTop && !exitId} stackIndex={si} total={visible.length} T={T}
+                  onConfirm={(id, data) => triggerExit(id, "up",   cb => onConfirm(cb, data))}
+                  onDiscard={id         => triggerExit(id, "right", cb => onDiscard(cb))} />
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ textAlign: "center", animation: "fadeIn 0.3s ease" }}>
+          <p style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "40px", letterSpacing: "0.08em", color: T.accent, margin: "0 0 8px" }}>All Done</p>
+          <p style={{ fontFamily: "Georgia, serif", fontSize: "15px", color: T.textMuted, margin: "0 0 24px" }}>Session logged. Go recover.</p>
+          <button onClick={onClose}
+            style={{ padding: "12px 32px", borderRadius: "10px", border: "none", background: T.accent, color: "#fff", fontFamily: "Georgia, serif", fontWeight: 700, fontSize: "15px", cursor: "pointer", boxShadow: `0 3px 14px ${T.accentGlow}`, minHeight: "48px" }}>
+            Close
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Root ──────────────────────────────────────────────────────
+export default function ChatUI() {
+  const [darkMode, setDarkMode] = useState(false);
+  const T = THEMES[darkMode ? "dark" : "light"];
+
+  const [cards, setCards] = useState([
+    { id: 1, exerciseName: "bench press",  sets: 3, metricType: "reps",     metricValue: 10,  weight: 80,  weightUnit: "kg", state: "pending" },
+    { id: 2, exerciseName: "pull ups",     sets: 4, metricType: "reps",     metricValue: 8,   weight: 0,   weightUnit: "kg", state: "pending" },
+    { id: 3, exerciseName: "morning run",  sets: 1, metricType: "distance", metricValue: 5.5, weight: 0,   weightUnit: "kg", state: "pending" },
+  ]);
+
+  const [msgs, setMsgs] = useState([
+    { id: 1, role: "eco",  text: "Good to see you. What did you train today?" },
+    { id: 2, role: "user", text: "bench press 3x10 at 80kg, pull ups 4 sets of 8, and a 5.5km run" },
+    { id: 3, role: "eco",  text: "Three exercises — great session. Bench press matches last week's weight.", hasCards: true },
+  ]);
+
+  const [val, setVal]         = useState("");
+  const [typing, setTyping]   = useState(false);
+  const [modalOpen, setModal] = useState(false);
+  const bottomRef   = useRef(null);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgs, typing, cards]);
+
+  const resizeTextarea = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 140) + "px";
+  };
+
+  const handleConfirm = (id, data) => setCards(cs => cs.map(c => c.id === id ? { ...c, ...data, state: "confirmed" } : c));
+  const handleDiscard = id          => setCards(cs => cs.map(c => c.id === id ? { ...c, state: "discarded" } : c));
+
+  const send = () => {
+    if (!val.trim()) return;
+    const text = val.trim();
+    setMsgs(m => [...m, { id: Date.now(), role: "user", text }]);
+    setVal("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+    setTyping(true);
+    setTimeout(() => {
+      setTyping(false);
+      setMsgs(m => [...m, { id: Date.now() + 1, role: "eco", text: "Got it — confirm the card when you're ready." }]);
+    }, 1300);
+  };
+
+  const pending   = cards.filter(c => c.state === "pending");
+  const confirmed = cards.filter(c => c.state === "confirmed");
+
+  return (
+    <div style={{ minHeight: "100dvh", background: T.bg, display: "flex", flexDirection: "column", transition: "background 0.3s ease" }}>
+      <style>{`
+        @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-4px)} }
+        @keyframes fadeUp { from{opacity:0;transform:translateY(7px)} to{opacity:1;transform:none} }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        @keyframes ripple { 0%,100%{opacity:0.2;transform:scale(1)} 50%{opacity:0.07;transform:scale(1.8)} }
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+        input[type=number] { -moz-appearance: textfield; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 2px; }
+      `}</style>
+      <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* ── Header ────────────────────────────────────────── */}
+      <div style={{
+        position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+        backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+        background: T.headerBg,
+        borderBottom: `1px solid ${T.headerBorder}`,
+        height: "52px",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "0 56px",
+      }}>
+        {/* Chat name — centred like Claude.ai */}
+        <p style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: "14px", fontWeight: 600, color: T.text, letterSpacing: "0.01em", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          Today's Session
+        </p>
+
+        {/* Theme toggle — top right */}
+        <button onClick={() => setDarkMode(d => !d)}
+          style={{ position: "absolute", right: "12px", width: "36px", height: "36px", borderRadius: "50%", border: `1px solid ${T.border}`, background: T.toggleBg, fontSize: "16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s cubic-bezier(0.165,0.85,0.45,1)" }}
+          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.08)"}
+          onMouseLeave={e => e.currentTarget.style.transform = ""}>
+          {darkMode ? "☀️" : "🌙"}
+        </button>
+      </div>
+
+      {/* ── Feed ──────────────────────────────────────────── */}
+      <div style={{ flex: 1, paddingBottom: "170px", paddingTop: "52px" }}>
+        <div style={{ maxWidth: "680px", margin: "0 auto", padding: "32px 16px 0" }}>
+
+          {msgs.map((msg, idx) => {
+            const isEco  = msg.role === "eco";
+            const isUser = msg.role === "user";
+
+            return (
+              <div key={msg.id} style={{ marginBottom: isEco ? "24px" : "10px", animation: "fadeUp 0.28s ease" }}>
+
+                {/* Eco response — no label at all */}
+                {isEco && (
+                  <div>
+                    {msg.text && (
+                      <p style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: 400, color: T.text, lineHeight: 1.75, marginBottom: msg.hasCards ? "12px" : 0 }}>
+                        {msg.text}
+                      </p>
+                    )}
+                    {msg.hasCards && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {/* Confirmed rows stack above notif */}
+                        {confirmed.map(c => <HistoryRow key={c.id} card={c} T={T} />)}
+                        {/* Notification persists until all confirmed */}
+                        {pending.length > 0 && (
+                          <NotifCard pending={pending} confirmed={confirmed} onOpen={() => setModal(true)} T={T} />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* User bubble — right-aligned */}
+                {isUser && (
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <div style={{ maxWidth: "78%", padding: "11px 16px", borderRadius: "18px 18px 4px 18px", background: T.userBubble, boxShadow: `0 1px 3px ${T.borderSubtle}` }}>
+                      <p style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: 400, color: T.userText, lineHeight: 1.7 }}>
+                        {msg.text}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Typing dots */}
+          {typing && (
+            <div style={{ marginBottom: "24px", animation: "fadeUp 0.28s ease" }}>
+              <div style={{ display: "flex", gap: "5px", alignItems: "center", height: "24px" }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ width: "6px", height: "6px", borderRadius: "50%", background: T.textFaint, animation: "bounce 1.2s infinite", animationDelay: `${i * 0.2}s` }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div ref={bottomRef} />
+        </div>
+      </div>
+
+      {/* ── Composer ──────────────────────────────────────── */}
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50 }}>
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "150px", background: `linear-gradient(to top, ${T.bg} 50%, transparent)`, pointerEvents: "none" }} />
+
+        <div style={{ position: "relative", maxWidth: "680px", margin: "0 auto", padding: `0 16px calc(20px + env(safe-area-inset-bottom))` }}>
+          <div style={{ background: T.composer, borderRadius: "16px", border: `1px solid ${T.border}`, boxShadow: T.composerShadow, overflow: "hidden" }}>
+            <div style={{ padding: "14px 16px 0" }}>
+              <textarea
+                ref={textareaRef}
+                value={val}
+                rows={1}
+                onChange={e => { setVal(e.target.value); resizeTextarea(); }}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+                }}
+                placeholder="What did you train today?"
+                style={{ border: "none", outline: "none", background: "transparent", width: "100%", resize: "none", overflow: "hidden", fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: 400, color: T.text, lineHeight: 1.65, display: "block" }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px 10px" }}>
+              {/* Fixed hint */}
+              <span style={{ fontFamily: "Georgia, serif", fontSize: "11px", color: T.textFaint }}>
+                Shift + Enter for new line
+              </span>
+              <button onClick={send} disabled={!val.trim()}
+                style={{ width: "36px", height: "36px", borderRadius: "10px", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: val.trim() ? "pointer" : "default", background: val.trim() ? T.accent : T.subBg, color: val.trim() ? "#fff" : T.textFaint, transition: "all 0.2s cubic-bezier(0.165,0.85,0.45,1)", boxShadow: val.trim() ? `0 2px 8px ${T.accentGlow}` : "none", fontSize: "16px", flexShrink: 0 }}
+                onMouseEnter={e => { if (val.trim()) { e.currentTarget.style.transform = "scale(1.05)"; e.currentTarget.style.background = T.accentHover; } }}
+                onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.background = val.trim() ? T.accent : T.subBg; }}>
+                ↑
+              </button>
+            </div>
+          </div>
+          <p style={{ textAlign: "center", marginTop: "6px", fontSize: "11px", color: T.textFaint, fontFamily: "Georgia, serif" }}>
+            Eco Track · Session active
+          </p>
+        </div>
+      </div>
+
+      {/* ── Modal ─────────────────────────────────────────── */}
+      {modalOpen && (
+        <CardModal cards={cards} onClose={() => setModal(false)} onConfirm={handleConfirm} onDiscard={handleDiscard} T={T} />
+      )}
+    </div>
+  );
+}
