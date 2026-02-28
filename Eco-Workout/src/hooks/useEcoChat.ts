@@ -21,8 +21,9 @@ function parseGeminiJSON(text: string): AIResponse {
   }
 }
 
-// Builds the context string sent to Gemini alongside the user's message.
-// Format: all summaries (oldest first) + last 5 raw message pairs.
+// Builds the context string sent to Gemini.
+// = all summaries (compressed old history) + last 5 raw messages (recent detail)
+// Summaries and messages are stored separately and never mixed up.
 function buildContext(
   summaries: Array<{ content: string }>,
   recentMessages: Message[]
@@ -30,7 +31,7 @@ function buildContext(
   let context = '';
 
   if (summaries.length > 0) {
-    context += 'Session summaries (oldest first):\n';
+    context += 'Previous session summaries:\n';
     context += summaries.map(s => s.content).join('\n---\n');
     context += '\n\n';
   }
@@ -56,14 +57,15 @@ export function useEcoChat() {
   const [isTyping, setIsTyping] = useState(false);
 
   // ── Convex mutations & actions ───────────────────────────────
-  const getOrCreateChat  = useMutation(api.myFunctions.getOrCreateTodayChat);
-  const saveMessageMut   = useMutation(api.myFunctions.saveMessage);
-  const updateMessageMut = useMutation(api.myFunctions.updateMessage);
-  const addWorkoutMut    = useMutation(api.myFunctions.addWorkout);
-  const callGemini       = useAction(api.myFunctions.callGemniniAPI);
-  const generateSummary  = useAction(api.myFunctions.generateSummary);
+  const getOrCreateChat      = useMutation(api.myFunctions.getOrCreateTodayChat);
+  const saveMessageMut       = useMutation(api.myFunctions.saveMessage);
+  const updateMessageMut     = useMutation(api.myFunctions.updateMessage);
+  const createWorkoutSession = useMutation(api.myFunctions.createWorkoutSession);
+  const addExerciseToWorkout = useMutation(api.myFunctions.addExerciseToWorkout);
+  const callGemini           = useAction(api.myFunctions.callGemniniAPI);
+  const generateSummary      = useAction(api.myFunctions.generateSummary);
 
-  // ── Convex queries (reactive — auto-update when DB changes) ──
+  // ── Convex queries ───────────────────────────────────────────
   const rawMessages  = useQuery(
     api.myFunctions.getMessages,
     chatId ? { chatId: chatId as any } : 'skip'
@@ -79,7 +81,7 @@ export function useEcoChat() {
       .then(id => setChatId(id as string));
   }, []);
 
-  // ── Transform raw Convex docs → our Message type ─────────────
+  // ── Transform raw DB docs → typed Message objects ─────────────
   const messages: Message[] = useMemo(() => {
     if (!rawMessages) return [];
     return rawMessages.map(m => ({
@@ -92,31 +94,29 @@ export function useEcoChat() {
   }, [rawMessages]);
 
   // ── Summary trigger ──────────────────────────────────────────
-  // Every time the message count hits a multiple of 10,
-  // summarise the oldest 5 messages from that batch.
-  // Fire-and-forget: runs in the background, doesn't block the user.
+  // Fires when message count hits a multiple of 10.
+  // Summarises the oldest 5 from that batch (fire-and-forget).
   useEffect(() => {
     if (!rawMessages || !chatId) return;
     const count = rawMessages.length;
     if (count > 0 && count % 10 === 0) {
       const toSummarise = rawMessages
-        .slice(count - 10, count - 5) // oldest 5 from the last batch
+        .slice(count - 10, count - 5)
         .map(m => ({ userText: m.userText, ecoText: m.ecoText }));
 
       generateSummary({
         chatId: chatId as any,
         userId: FAKE_USER_ID,
         messagesToSummarise: toSummarise,
-      }).catch(err => console.error('Summary generation failed:', err));
+      }).catch(err => console.error('Summary failed:', err));
     }
   }, [rawMessages?.length]);
 
   // ════════════════════════════════════════════════════════════
-  // sendMessage — called by ChatUI when user submits text
+  // sendMessage
   // ════════════════════════════════════════════════════════════
   const sendMessage = async (userText: string): Promise<void> => {
     if (!chatId || !userText.trim()) return;
-
     setIsTyping(true);
 
     try {
@@ -168,41 +168,56 @@ export function useEcoChat() {
   };
 
   // ════════════════════════════════════════════════════════════
-  // confirmCard — user taps "Confirm ✓" on a card
-  // Saves the exercise to DB immediately, marks card confirmed.
+  // confirmCard
+  //
+  // Grouping logic:
+  // - First card confirmed in a message → create a new workout session,
+  //   store the workoutId on the message document.
+  // - Every card after that → reuse the same workoutId.
+  // This means all exercises from one AI reply = one workout session.
   // ════════════════════════════════════════════════════════════
   const confirmCard = async (
     messageId: string,
     cardId: number,
-    data: Partial<Card>  // may include edits the user made in the modal
+    data: Partial<Card>
   ): Promise<void> => {
-    // Find the message in the raw Convex docs (need the _id for patch)
     const rawMsg = rawMessages?.find(m => m._id === messageId);
     if (!rawMsg) return;
 
-    // 1. Update card state in the messages table
+    // 1. Update the card state in the message
     const updatedCards = (rawMsg.cards as Card[] ?? []).map(c =>
       c.id === cardId ? { ...c, ...data, state: 'confirmed' as const } : c
     );
     const allDone = updatedCards.every(c => c.state !== 'pending');
 
+    // 2. Get or create the workout session for this message
+    let workoutId = rawMsg.workoutId as string | undefined;
+    if (!workoutId) {
+      // First card confirmed in this message — create the session header
+      workoutId = await createWorkoutSession({ userId: FAKE_USER_ID }) as string;
+    }
+
+    // 3. Patch the message with updated cards + workoutId
     await updateMessageMut({
       messageId: messageId as any,
       cards: updatedCards,
       state: allDone ? 'confirmed' : 'pending',
+      workoutId: workoutId as any,
     });
 
-    // 2. Save the confirmed exercise to the workouts table
+    // 4. Save this exercise to the workout session
     const confirmedCard = updatedCards.find(c => c.id === cardId);
     if (confirmedCard) {
       const { id: _id, state: _state, ...exercise } = confirmedCard;
-      await addWorkoutMut({ data: [exercise] });
+      await addExerciseToWorkout({
+        workoutId: workoutId as any,
+        exercise,
+      });
     }
   };
 
   // ════════════════════════════════════════════════════════════
-  // discardCard — user taps "Discard" on a card
-  // Marks as discarded. Does NOT save to workouts table.
+  // discardCard
   // ════════════════════════════════════════════════════════════
   const discardCard = async (
     messageId: string,
@@ -227,7 +242,7 @@ export function useEcoChat() {
   return {
     messages,
     isTyping,
-    isLoading: rawMessages === undefined, // true while Convex loads
+    isLoading: rawMessages === undefined,
     sendMessage,
     confirmCard,
     discardCard,

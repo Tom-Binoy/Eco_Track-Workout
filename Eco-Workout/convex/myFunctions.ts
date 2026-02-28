@@ -22,7 +22,7 @@ const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 export const getOrCreateTodayChat = mutation({
   args: {
     userId: v.string(),
-    date: v.string(), // "2026-02-28"
+    date: v.string(),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -31,9 +31,7 @@ export const getOrCreateTodayChat = mutation({
         q.eq("userId", args.userId).eq("date", args.date)
       )
       .first();
-
     if (existing) return existing._id;
-
     return await ctx.db.insert("chats", {
       userId: args.userId,
       date: args.date,
@@ -73,12 +71,14 @@ export const updateMessage = mutation({
       v.literal('confirmed'),
       v.literal('editing')
     )),
+    workoutId: v.optional(v.id("workouts")),
   },
   handler: async (ctx, args) => {
     const { messageId, ...fields } = args;
     const patch: Record<string, unknown> = {};
-    if (fields.cards !== undefined) patch.cards = fields.cards;
-    if (fields.state !== undefined) patch.state = fields.state;
+    if (fields.cards     !== undefined) patch.cards     = fields.cards;
+    if (fields.state     !== undefined) patch.state     = fields.state;
+    if (fields.workoutId !== undefined) patch.workoutId = fields.workoutId;
     await ctx.db.patch(messageId, patch);
   },
 });
@@ -131,7 +131,6 @@ export const generateSummary = action({
   args: {
     chatId: v.id("chats"),
     userId: v.string(),
-    // The messages to summarise — passed in from the hook
     messagesToSummarise: v.array(v.object({
       userText: v.string(),
       ecoText: v.string(),
@@ -143,8 +142,8 @@ export const generateSummary = action({
       .join('\n\n');
 
     const prompt = `Summarise this workout conversation for future AI context.
-Focus on: exercises performed, weights used, any personal records hit, and important user context (mood, injuries, goals mentioned).
-Be concise but complete. Return only the summary text, no preamble.
+Focus on: exercises performed, weights used, personal records, and important user context (mood, injuries, goals).
+Be concise. Return only the summary text, no preamble.
 
 Conversation:
 ${conversation}`;
@@ -190,7 +189,6 @@ export const callGemniniAPI = action({
       return result.response.text();
     } catch (error) {
       console.error("Gemini API error:", error);
-      // Return valid JSON so the frontend parser never crashes
       return JSON.stringify({
         action: 'chat_response',
         message: "Sorry, I had trouble with that. Try again?",
@@ -201,14 +199,31 @@ export const callGemniniAPI = action({
 });
 
 // ════════════════════════════════════════════════════════════════
-// WORKOUTS — SAVING CONFIRMED EXERCISES
+// WORKOUTS — GROUPED EXERCISE SAVING
 // ════════════════════════════════════════════════════════════════
 
-// Saves confirmed exercises to the workouts + exercises tables.
-// Called once per confirmed card.
-export const addWorkout = mutation({
+// Step 1: Create the workout session header.
+// Called once when the FIRST card in a message is confirmed.
+// Returns the workoutId — stored on the message and reused for all
+// subsequent cards in that same message.
+export const createWorkoutSession = mutation({
   args: {
-    data: v.array(v.object({
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("workouts", {
+      userId: args.userId,
+      timestamp: Date.now(),
+    });
+  },
+});
+
+// Step 2: Add a single confirmed exercise to an existing workout session.
+// Called for EVERY card confirmed (using the workoutId from step 1).
+export const addExerciseToWorkout = mutation({
+  args: {
+    workoutId: v.id("workouts"),
+    exercise: v.object({
       exerciseName: v.string(),
       sets: v.number(),
       metricType: v.union(
@@ -219,21 +234,20 @@ export const addWorkout = mutation({
       metricValue: v.number(),
       weight: v.optional(v.number()),
       weightUnit: v.optional(v.union(v.literal('kg'), v.literal('lbs'))),
-    })),
+    }),
   },
   handler: async (ctx, args) => {
-    const workoutId = await ctx.db.insert("workouts", {
-      userId: FAKE_USER_ID,
-      timestamp: Date.now(),
+    return await ctx.db.insert("exercises", {
+      workoutId: args.workoutId,
+      ...args.exercise,
     });
-    for (const ex of args.data) {
-      await ctx.db.insert("exercises", { workoutId, ...ex });
-    }
-    return workoutId;
   },
 });
 
-// Fetches recent workouts (used for context memory in future).
+// ════════════════════════════════════════════════════════════════
+// MISC
+// ════════════════════════════════════════════════════════════════
+
 export const listNumbers = query({
   args: { count: v.number() },
   handler: async (ctx, args) => {
