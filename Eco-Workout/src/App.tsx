@@ -1,5 +1,5 @@
 import ChatUI from './components/chat/ChatUI';
 
-export function AppContent() {
+export default function AppContent() {
   return <ChatUI />;
 }

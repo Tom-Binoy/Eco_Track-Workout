@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { Exercise } from "../src/types";
 
 // Query to get recent workouts for a user
 export const getRecent = query({
