@@ -11,7 +11,7 @@ const FAKE_USER_ID = 'user_01';
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) throw new Error("GEMINI_API_KEY not set");
 const genAI = new GoogleGenerativeAI(apiKey);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemma-3-12b-it' });
 
 // ════════════════════════════════════════════════════════════════
 // CHAT SESSION
