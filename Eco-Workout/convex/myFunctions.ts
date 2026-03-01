@@ -71,6 +71,7 @@ export const updateMessage = mutation({
       v.literal('confirmed'),
       v.literal('editing')
     )),
+    ecoText: v.optional(v.string()),
     workoutId: v.optional(v.id("workouts")),
   },
   handler: async (ctx, args) => {
@@ -79,6 +80,7 @@ export const updateMessage = mutation({
     if (fields.cards     !== undefined) patch.cards     = fields.cards;
     if (fields.state     !== undefined) patch.state     = fields.state;
     if (fields.workoutId !== undefined) patch.workoutId = fields.workoutId;
+    if (fields.ecoText   !== undefined) patch.ecoText   = fields.ecoText;
     await ctx.db.patch(messageId, patch);
   },
 });

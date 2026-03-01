@@ -11,6 +11,7 @@ interface EcoChatProps {
   onSend: (text: string) => Promise<void>;
   onConfirmCard: (messageId: string, cardId: number, data: Partial<Card>) => void;
   onDiscardCard: (messageId: string, cardId: number) => void;
+  onRegenerateMessage: (messageId: string, userText: string) => Promise<void>;
 }
 
 // ─── Claude.ai exact color tokens ─────────────────────────────
@@ -297,9 +298,40 @@ export default function ChatUI({
   onSend,
   onConfirmCard,
   onDiscardCard,
+  onRegenerateMessage,
 }: EcoChatProps) {
   const [darkMode, setDarkMode] = useState(false);
   const T = THEMES[darkMode ? "dark" : "light"];
+  const [ecoTimer, setEcoTimer]       = useState(0);
+  const [responseMs, setResponseMs]   = useState<Record<string, number>>({});
+  const timerRef                       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const typingStartRef                 = useRef<number>(0);
+  const [hoveredId, setHoveredId]     = useState<string | null>(null);
+  const [likes, setLikes]             = useState<Record<string, boolean>>({});
+  const [dislikes, setDislikes]       = useState<Record<string, boolean>>({});
+  const [editingId, setEditingId]     = useState<string | null>(null);
+  const [editVal, setEditVal]         = useState('');
+
+  useEffect(() => {
+    if (isTyping) {
+      typingStartRef.current = Date.now();
+      setEcoTimer(0);
+      timerRef.current = setInterval(() => {
+        setEcoTimer(Math.floor((Date.now() - typingStartRef.current) / 1000));
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+      // stamp the last AI message with how long it took
+      if (messages.length > 0) {
+        const last = messages[messages.length - 1];
+        if (last.eco) {
+          const elapsed = Date.now() - typingStartRef.current;
+          setResponseMs(prev => ({ ...prev, [last.id]: elapsed }));
+        }
+      }
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [isTyping]);
 
   // Which message's modal is open (null = closed)
   const [modalMessageId, setModalMessageId] = useState<string | null>(null);
@@ -333,6 +365,53 @@ export default function ChatUI({
     ? messages.find(m => m.id === modalMessageId)
     : null;
   const modalCards = modalMessage?.cards ?? [];
+
+  function MessageActions({ isUser, onEdit, onRegenerate, onCopy, onLike, onDislike, liked, disliked, T }: {
+    isUser: boolean; onEdit?: () => void; onRegenerate?: () => void;
+    onCopy?: () => void; onLike?: () => void; onDislike?: () => void;
+    liked?: boolean; disliked?: boolean; T: typeof THEMES.light;
+  }) {
+    const btn: React.CSSProperties = {
+      background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+      borderRadius: '6px', color: T.textFaint, fontSize: '13px',
+      transition: 'color 0.15s, background 0.15s', minWidth: '24px', minHeight: '24px',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    };
+    return (
+      <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+        {isUser && onEdit && (
+          <button style={btn} title="Edit" onClick={onEdit}
+            onMouseEnter={e => { e.currentTarget.style.color = '#3b82f6'; e.currentTarget.style.background = 'rgba(59,130,246,0.08)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.textFaint; e.currentTarget.style.background = 'none'; }}>✏️</button>
+        )}
+        {!isUser && onRegenerate && (
+          <button style={btn} title="Regenerate" onClick={onRegenerate}
+            onMouseEnter={e => { e.currentTarget.style.color = '#3b82f6'; e.currentTarget.style.background = 'rgba(59,130,246,0.08)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.textFaint; e.currentTarget.style.background = 'none'; }}>↺</button>
+        )}
+        {!isUser && onCopy && (
+          <button style={btn} title="Copy" onClick={onCopy}
+            onMouseEnter={e => { e.currentTarget.style.color = '#3b82f6'; e.currentTarget.style.background = 'rgba(59,130,246,0.08)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.textFaint; e.currentTarget.style.background = 'none'; }}>⎘</button>
+        )}
+        {!isUser && onLike && (
+          <button style={btn} title="Good response" onClick={onLike}
+            onMouseEnter={e => { e.currentTarget.style.color = '#3b82f6'; e.currentTarget.style.background = 'rgba(59,130,246,0.08)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.textFaint; e.currentTarget.style.background = 'none'; }}
+            data-active={liked}>
+            {liked ? '👍' : '👍'}
+          </button>
+        )}
+        {!isUser && onDislike && (
+          <button style={btn} title="Bad response" onClick={onDislike}
+            onMouseEnter={e => { e.currentTarget.style.color = '#3b82f6'; e.currentTarget.style.background = 'rgba(59,130,246,0.08)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.textFaint; e.currentTarget.style.background = 'none'; }}>
+            {disliked ? '👎' : '👎'}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100dvh", background: T.bg, display: "flex", flexDirection: "column", transition: "background 0.3s ease" }}>
@@ -384,55 +463,95 @@ export default function ChatUI({
 
           {/* Message pairs */}
           {messages.map(msg => {
-            const msgPending   = (msg.cards ?? []).filter(c => c.state === "pending");
-            const msgConfirmed = (msg.cards ?? []).filter(c => c.state === "confirmed");
+            const msgPending   = (msg.cards ?? []).filter(c => c.state === 'pending');
+            const msgConfirmed = (msg.cards ?? []).filter(c => c.state === 'confirmed');
+            const isHovered    = hoveredId === msg.id;
+            const isOptimistic = msg.id === 'optimistic';
+
+            const formatTime = (ts?: number) => {
+              if (!ts) return '';
+              return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            };
 
             return (
-              <div key={msg.id} style={{ marginBottom: "24px", animation: "fadeUp 0.28s ease" }}>
+              <div key={msg.id} style={{ marginBottom: '24px', animation: 'fadeUp 0.28s ease' }}
+                onMouseEnter={() => setHoveredId(msg.id)}
+                onMouseLeave={() => setHoveredId(null)}>
 
-                {/* User bubble — right-aligned */}
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "10px" }}>
-                  <div style={{ maxWidth: "78%", padding: "11px 16px", borderRadius: "18px 18px 4px 18px", background: T.userBubble, boxShadow: `0 1px 3px ${T.borderSubtle}` }}>
-                    <p style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: 400, color: T.userText, lineHeight: 1.7 }}>
-                      {msg.user}
-                    </p>
+                {/* User bubble */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                  {editingId === msg.id ? (
+                    <div style={{ maxWidth: '78%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <textarea value={editVal} onChange={e => setEditVal(e.target.value)} autoFocus
+                        style={{ border: `1px solid ${T.border}`, borderRadius: '12px', padding: '11px 16px', background: T.userBubble, color: T.userText, fontFamily: 'Georgia, serif', fontSize: '15px', resize: 'none', outline: 'none', minHeight: '60px', lineHeight: 1.7 }} />
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                        <button onClick={() => setEditingId(null)} style={{ padding: '6px 12px', borderRadius: '8px', border: `1px solid ${T.border}`, background: 'transparent', color: T.textMuted, cursor: 'pointer', fontSize: '13px', fontFamily: 'Georgia, serif' }}>Cancel</button>
+                        <button onClick={() => { onRegenerateMessage(msg.id, editVal); setEditingId(null); }}
+                          style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: T.accent, color: '#fff', cursor: 'pointer', fontSize: '13px', fontFamily: 'Georgia, serif', fontWeight: 700 }}>Send ↑</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ maxWidth: '78%', padding: '11px 16px', borderRadius: '18px 18px 4px 18px', background: T.userBubble, boxShadow: `0 1px 3px ${T.borderSubtle}`, opacity: isOptimistic ? 0.6 : 1 }}>
+                      <p style={{ margin: 0, fontFamily: 'Georgia, serif', fontSize: '15px', fontWeight: 400, color: T.userText, lineHeight: 1.7 }}>
+                        {msg.user}
+                      </p>
+                    </div>
+                  )}
+                  {/* User message actions + time */}
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', opacity: (isHovered || window.matchMedia('(hover: none)').matches) ? 1 : 0, transition: 'opacity 0.15s' }}>
+                    {msg.timestamp && <span style={{ fontSize: '11px', color: T.textFaint, fontFamily: 'Georgia, serif' }}>{formatTime(msg.timestamp)}</span>}
+                    {!isOptimistic && editingId !== msg.id && (
+                      <MessageActions isUser T={T} onEdit={() => { setEditingId(msg.id); setEditVal(msg.user); }} />
+                    )}
                   </div>
                 </div>
 
                 {/* Eco reply */}
-                <div>
-                  {msg.eco && (
-                    <p style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: 400, color: T.text, lineHeight: 1.75, marginBottom: msg.cards && msg.cards.length > 0 ? "12px" : 0 }}>
+                {msg.eco && (
+                  <div>
+                    <p style={{ margin: 0, fontFamily: 'Georgia, serif', fontSize: '15px', fontWeight: 400, color: T.text, lineHeight: 1.75, marginBottom: msg.cards && msg.cards.length > 0 ? '12px' : 0 }}>
                       {msg.eco}
                     </p>
-                  )}
-
-                  {/* Exercise cards for this message */}
                   {msg.cards && msg.cards.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '6px' }}>
                       {msgConfirmed.map(c => <HistoryRow key={c.id} card={c} T={T} />)}
                       {msgPending.length > 0 && (
-                        <NotifCard
-                          pending={msgPending}
-                          confirmed={msgConfirmed}
-                          onOpen={() => setModalMessageId(msg.id)}
-                          T={T}
-                        />
+                        <NotifCard pending={msgPending} confirmed={msgConfirmed} onOpen={() => setModalMessageId(msg.id)} T={T} />
                       )}
                     </div>
                   )}
+                  {/* AI message actions + response time */}
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px', opacity: (isHovered || window.matchMedia('(hover: none)').matches) ? 1 : 0, transition: 'opacity 0.15s' }}>
+                    {responseMs[msg.id] && (
+                      <span style={{ fontSize: '11px', color: T.textFaint, fontFamily: 'Georgia, serif' }}>
+                        {(responseMs[msg.id] / 1000).toFixed(1)}s
+                      </span>
+                    )}
+                    <MessageActions isUser={false} T={T}
+                      onRegenerate={() => onRegenerateMessage(msg.id, msg.user)}
+                      onCopy={() => navigator.clipboard.writeText(msg.eco)}
+                      onLike={() => setLikes(p => ({ ...p, [msg.id]: !p[msg.id] }))}
+                      onDislike={() => setDislikes(p => ({ ...p, [msg.id]: !p[msg.id] }))}
+                      liked={likes[msg.id]} disliked={dislikes[msg.id]}
+                    />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              )}
+            </div>
+          );
+        })}
 
-          {/* Typing dots */}
           {isTyping && (
-            <div style={{ marginBottom: "24px", animation: "fadeUp 0.28s ease" }}>
-              <div style={{ display: "flex", gap: "5px", alignItems: "center", height: "24px" }}>
-                {[0, 1, 2].map(i => (
-                  <div key={i} style={{ width: "6px", height: "6px", borderRadius: "50%", background: T.textFaint, animation: "bounce 1.2s infinite", animationDelay: `${i * 0.2}s` }} />
-                ))}
+            <div style={{ marginBottom: '24px', animation: 'fadeUp 0.28s ease' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', height: '24px' }}>
+                <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                  {[0, 1, 2].map(i => (
+                    <div key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: T.textFaint, animation: 'bounce 1.2s infinite', animationDelay: `${i * 0.2}s` }} />
+                  ))}
+                </div>
+                <span style={{ fontFamily: 'Georgia, serif', fontSize: '11px', color: T.textFaint }}>
+                  {ecoTimer}s
+                </span>
               </div>
             </div>
           )}

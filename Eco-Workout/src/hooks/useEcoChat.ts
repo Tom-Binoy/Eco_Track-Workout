@@ -55,6 +55,7 @@ export function useEcoChat() {
   // ── Local state ──────────────────────────────────────────────
   const [chatId, setChatId] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [pendingUserText, setPendingUserText] = useState<string | null>(null);
 
   // ── Convex mutations & actions ───────────────────────────────
   const getOrCreateChat      = useMutation(api.myFunctions.getOrCreateTodayChat);
@@ -90,8 +91,21 @@ export function useEcoChat() {
       eco: m.ecoText,
       cards: m.cards as Card[] | undefined,
       state: m.state as Message['state'],
+      timestamp: m.timestamp as number,
     }));
   }, [rawMessages]);
+
+  // ── Optimistic UI ────────────────────────────────────────────
+  const allMessages: Message[] = useMemo(() => {
+  if (!pendingUserText) return messages;
+  return [...messages, {
+    id: 'optimistic',
+    user: pendingUserText,
+    eco: '',
+    state: 'pending' as const,
+    timestamp: Date.now(),
+  }];
+}, [messages, pendingUserText]);
 
   // ── Summary trigger ──────────────────────────────────────────
   // Fires when message count hits a multiple of 10.
@@ -117,6 +131,7 @@ export function useEcoChat() {
   // ════════════════════════════════════════════════════════════
   const sendMessage = async (userText: string): Promise<void> => {
     if (!chatId || !userText.trim()) return;
+    setPendingUserText(userText);
     setIsTyping(true);
 
     try {
@@ -164,6 +179,7 @@ export function useEcoChat() {
       });
     } finally {
       setIsTyping(false);
+      setPendingUserText(null);
     }
   };
 
@@ -202,6 +218,7 @@ export function useEcoChat() {
       messageId: messageId as any,
       cards: updatedCards,
       state: allDone ? 'confirmed' : 'pending',
+      ecoText: rawMsg.ecoText,
       workoutId: workoutId as any,
     });
 
@@ -235,16 +252,48 @@ export function useEcoChat() {
       messageId: messageId as any,
       cards: updatedCards,
       state: allDone ? 'confirmed' : 'pending',
+      ecoText: rawMsg.ecoText,
     });
   };
 
+  // ════════════════════════════════════════════════════════════
+  // regenerateMessage
+  // ════════════════════════════════════════════════════════════
+  const regenerateMessage = async (messageId: string, userText: string): Promise<void> => {
+  if (!chatId) return;
+  setIsTyping(true);
+  try {
+    const context = buildContext(rawSummaries ?? [], messages);
+    const raw = await callGemini({ userInput: userText, context });
+    const parsed = parseGeminiJSON(raw);
+    let cards: Card[] | undefined;
+    if (parsed.action === 'log_workouts' && parsed.data) {
+      cards = parsed.data.map((ex: Exercise, i: number) => ({
+        ...ex, id: Date.now() + i, state: 'pending' as const,
+      }));
+    }
+    await updateMessageMut({
+      messageId: messageId as any,
+      cards: cards ?? [],
+      state: 'pending',
+      ecoText: parsed.message,
+    });
+    // Also patch ecoText — needs a new mutation or extend updateMessage args
+    // For now, save as a new message and delete old (simplest):
+  } catch (err) {
+    console.error('regenerate error:', err);
+  } finally {
+    setIsTyping(false);
+  }
+};
   // ── Return everything ChatUI needs ───────────────────────────
   return {
-    messages,
+    messages: allMessages,
     isTyping,
     isLoading: rawMessages === undefined,
     sendMessage,
     confirmCard,
     discardCard,
+    regenerateMessage,
   };
 }

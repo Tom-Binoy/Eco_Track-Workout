@@ -15,6 +15,7 @@ export default function App() {
       onSend={chat.sendMessage}
       onConfirmCard={chat.confirmCard}
       onDiscardCard={chat.discardCard}
+      onRegenerateMessage={chat.regenerateMessage}
     />
   );
 }

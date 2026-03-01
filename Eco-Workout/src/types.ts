@@ -26,7 +26,8 @@ export interface Message {
   user: string;     // What the user said
   eco: string;      // What Eco replied
   cards?: Card[];   // Parsed exercises — only present if action === 'log_workouts'
-  state: 'pending' | 'confirmed' | 'editing';
+  state?: 'pending' | 'confirmed' | 'editing';
+  timestamp: number;
 }
 
 // ─── AI response shape (what Gemini returns as JSON) ───────────
