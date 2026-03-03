@@ -11,8 +11,6 @@ export default defineSchema({
   }).index("by_token", ["tokenId"]),
 
   // ── 2. Workout session header ────────────────────────────────
-  // One row per AI message that had exercises.
-  // All exercises confirmed from that message share this workoutId.
   workouts: defineTable({
     userId: v.string(),
     timestamp: v.number(),
@@ -21,62 +19,76 @@ export default defineSchema({
   }).index("by_user", ["userId"]),
 
   // ── 3. Exercises ─────────────────────────────────────────────
-  // Many exercises → one workoutId.
   exercises: defineTable({
     workoutId: v.id("workouts"),
     exerciseName: v.string(),
     sets: v.number(),
     metricType: v.union(
-      v.literal('reps'),
-      v.literal('distance'),
-      v.literal('duration')
+      v.literal("reps"),
+      v.literal("distance"),
+      v.literal("duration")
     ),
     metricValue: v.number(),
     weight: v.optional(v.number()),
-    weightUnit: v.optional(v.union(v.literal('kg'), v.literal('lbs'))),
-  }).index('by_workout', ["workoutId"]),
+    weightUnit: v.optional(v.union(v.literal("kg"), v.literal("lbs"))),
+  }).index("by_workout", ["workoutId"]),
 
-  // ── 4. AI feedback log ───────────────────────────────────────
-  aiFeedback: defineTable({
-    feedbackId: v.string(),
-    corrections: v.array(v.any()),
-    systemPrompt: v.string(),
-    timestamp: v.number(),
-  }),
-
-  // ── 5. Chat sessions (one per day per user) ──────────────────
+  // ── 4. Chat sessions (one per day per user) ──────────────────
   chats: defineTable({
     userId: v.string(),
-    date: v.string(),      // "2026-02-28"
+    date: v.string(), // "2026-02-28"
     createdAt: v.number(),
   })
     .index("by_user", ["userId"])
     .index("by_user_date", ["userId", "date"]),
 
-  // ── 6. Messages (raw — the USER's view) ─────────────────────
-  // Every round-trip stored untouched. Never compressed.
-  // workoutId: set after first card confirmed. All cards in this
-  // message reuse the same workoutId → exercises grouped per session.
-  messages: defineTable({
+  // ── 5. Message Groups (replaces flat `messages` table) ───────
+  //
+  // Each group = one conversation "turn" (one user prompt + one AI reply).
+  // A group can have MULTIPLE branches when the user edits the message.
+  //
+  // Tree structure:
+  //   parentGroupId + parentBranchIndex tell us which branch of the parent
+  //   this group follows from. The visible chain is constructed by walking
+  //   from root groups, always following the group whose parentBranchIndex
+  //   matches the parent's current activeBranch.
+  //
+  // Branch shape (stored inline as array):
+  //   { userText, ecoText, stopped, cards, workoutId, state, timestamp }
+  //
+  messageGroups: defineTable({
     chatId: v.id("chats"),
     userId: v.string(),
-    userText: v.string(),
-    ecoText: v.string(),
-    cards: v.optional(v.array(v.any())),
-    state: v.union(
-      v.literal('pending'),
-      v.literal('confirmed'),
-      v.literal('editing')
-    ),
-    workoutId: v.optional(v.id("workouts")), // ← groups exercises together
+
+    // Tree linkage
+    parentGroupId: v.optional(v.id("messageGroups")),
+    parentBranchIndex: v.optional(v.number()), // follows from which branch of parent
+
+    // Branching state
+    activeBranch: v.number(), // index into branches[] — what the user is currently viewing
+    branches: v.array(v.object({
+      userText: v.string(),
+      ecoText: v.optional(v.string()),    // undefined while pending, filled when AI responds
+      stopped: v.optional(v.boolean()),   // true if user stopped generation on this branch
+      cards: v.optional(v.array(v.any())),
+      workoutId: v.optional(v.id("workouts")),
+      state: v.union(
+        v.literal("pending"),
+        v.literal("confirmed"),
+        v.literal("editing")
+      ),
+      timestamp: v.number(),
+    })),
+
+    // Metadata
+    likes: v.optional(v.union(v.literal("liked"), v.literal("disliked"))),
+    responseMs: v.optional(v.number()),
     timestamp: v.number(),
   })
     .index("by_chat", ["chatId"])
-    .index("by_user", ["userId"]),
+    .index("by_parent", ["parentGroupId"]),
 
-  // ── 7. Summaries (compressed — the AI's view) ───────────────
-  // Completely separate from messages. Never mixed in.
-  // AI context = all summaries + last 5 raw messages.
+  // ── 6. Summaries (AI context compression) ───────────────────
   summaries: defineTable({
     chatId: v.id("chats"),
     userId: v.string(),
@@ -85,4 +97,11 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_chat", ["chatId"]),
 
+  // ── 7. AI feedback log ───────────────────────────────────────
+  aiFeedback: defineTable({
+    feedbackId: v.string(),
+    corrections: v.array(v.any()),
+    systemPrompt: v.string(),
+    timestamp: v.number(),
+  }),
 });

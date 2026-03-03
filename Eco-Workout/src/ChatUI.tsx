@@ -4,14 +4,19 @@ import { Message, Card } from "./types";
 // ─── Props interface ───────────────────────────────────────────
 // ChatUI knows nothing about Convex, Gemini, or any backend.
 // It just renders what it's given and calls callbacks.
+// NEW
 interface EcoChatProps {
-  messages: Message[];
+  chain: MsgGroup[];
   isTyping: boolean;
   isLoading: boolean;
   onSend: (text: string) => Promise<void>;
-  onConfirmCard: (messageId: string, cardId: number, data: Partial<Card>) => void;
-  onDiscardCard: (messageId: string, cardId: number) => void;
-  onRegenerateMessage: (messageId: string, userText: string) => Promise<void>;
+  onEdit: (groupId: string, userText: string) => Promise<void>;
+  onRegenerate: (groupId: string, userText: string) => Promise<void>;
+  onStop: () => Promise<void>;
+  onSetActiveBranch: (groupId: string, branchIndex: number) => Promise<void>;
+  onLike: (groupId: string, likes: 'liked'|'disliked'|null) => void;
+  onConfirmCard: (groupId, cardId, data) => void;
+  onDiscardCard: (groupId, cardId) => void;
 }
 
 // ─── Claude.ai exact color tokens ─────────────────────────────

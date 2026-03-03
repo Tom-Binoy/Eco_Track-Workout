@@ -1,35 +1,29 @@
+"use node";
 import { v } from "convex/values";
 import { query, mutation, action } from "./_generated/server";
 import { api } from "./_generated/api";
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { WORKOUT_PARSER_PROMPT } from './prompt';
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { WORKOUT_PARSER_PROMPT } from "./prompt";
 
 // ── Auth placeholder (Week 3: replace with real Convex Auth) ───
-const FAKE_USER_ID = 'user_01';
+const FAKE_USER_ID = "user_01";
 
 // ── Gemini setup ────────────────────────────────────────────────
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) throw new Error("GEMINI_API_KEY not set");
 const genAI = new GoogleGenerativeAI(apiKey);
-const model = genAI.getGenerativeModel({ model: 'gemma-3-12b-it' });
+const model = genAI.getGenerativeModel({ model: "gemma-3-12b-it" });
 
 // ════════════════════════════════════════════════════════════════
 // CHAT SESSION
 // ════════════════════════════════════════════════════════════════
 
-// Gets today's chat, or creates one if it doesn't exist yet.
-// Called once on app mount. Returns the chatId.
 export const getOrCreateTodayChat = mutation({
-  args: {
-    userId: v.string(),
-    date: v.string(),
-  },
+  args: { userId: v.string(), date: v.string() },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("chats")
-      .withIndex("by_user_date", q =>
-        q.eq("userId", args.userId).eq("date", args.date)
-      )
+      .withIndex("by_user_date", q => q.eq("userId", args.userId).eq("date", args.date))
       .first();
     if (existing) return existing._id;
     return await ctx.db.insert("chats", {
@@ -41,59 +35,157 @@ export const getOrCreateTodayChat = mutation({
 });
 
 // ════════════════════════════════════════════════════════════════
-// MESSAGES
+// MESSAGE GROUPS
 // ════════════════════════════════════════════════════════════════
 
-// Saves one message pair (user + eco) to the messages table.
-export const saveMessage = mutation({
-  args: {
-    chatId: v.id("chats"),
-    userId: v.string(),
-    userText: v.string(),
-    ecoText: v.string(),
-    cards: v.optional(v.array(v.any())),
-    state: v.union(v.literal('pending'), v.literal('confirmed'), v.literal('editing')),
-    timestamp: v.number(),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db.insert("messages", args);
-  },
-});
-
-// Updates a message's cards and/or state.
-// Called when a card is confirmed or discarded.
-export const updateMessage = mutation({
-  args: {
-    messageId: v.id("messages"),
-    cards: v.optional(v.array(v.any())),
-    state: v.optional(v.union(
-      v.literal('pending'),
-      v.literal('confirmed'),
-      v.literal('editing')
-    )),
-    ecoText: v.optional(v.string()),
-    workoutId: v.optional(v.id("workouts")),
-  },
-  handler: async (ctx, args) => {
-    const { messageId, ...fields } = args;
-    const patch: Record<string, unknown> = {};
-    if (fields.cards     !== undefined) patch.cards     = fields.cards;
-    if (fields.state     !== undefined) patch.state     = fields.state;
-    if (fields.workoutId !== undefined) patch.workoutId = fields.workoutId;
-    if (fields.ecoText   !== undefined) patch.ecoText   = fields.ecoText;
-    await ctx.db.patch(messageId, patch);
-  },
-});
-
-// Returns all messages for a chat, oldest first.
-export const getMessages = query({
+// Returns ALL groups for a chat (client does tree traversal).
+export const getMessageGroups = query({
   args: { chatId: v.id("chats") },
   handler: async (ctx, args) => {
     return await ctx.db
-      .query("messages")
+      .query("messageGroups")
       .withIndex("by_chat", q => q.eq("chatId", args.chatId))
       .order("asc")
       .collect();
+  },
+});
+
+// Creates a new message group (new conversation turn).
+// Called when user sends a brand-new message (not an edit).
+export const createMessageGroup = mutation({
+  args: {
+    chatId: v.id("chats"),
+    userId: v.string(),
+    parentGroupId: v.optional(v.id("messageGroups")),
+    parentBranchIndex: v.optional(v.number()),
+    userText: v.string(),
+    timestamp: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("messageGroups", {
+      chatId: args.chatId,
+      userId: args.userId,
+      parentGroupId: args.parentGroupId,
+      parentBranchIndex: args.parentBranchIndex,
+      activeBranch: 0,
+      branches: [{
+        userText: args.userText,
+        ecoText: undefined,
+        stopped: false,
+        cards: [],
+        state: "pending",
+        timestamp: args.timestamp,
+      }],
+      likes: undefined,
+      responseMs: undefined,
+      timestamp: args.timestamp,
+    });
+  },
+});
+
+// Adds a new branch to an existing group (user edited their message).
+// Returns the new branch index so the caller can target it.
+export const addBranchToGroup = mutation({
+  args: {
+    groupId: v.id("messageGroups"),
+    userText: v.string(),
+    timestamp: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const group = await ctx.db.get(args.groupId);
+    if (!group) throw new Error("Group not found");
+    const newBranchIdx = group.branches.length;
+    await ctx.db.patch(args.groupId, {
+      activeBranch: newBranchIdx,
+      branches: [
+        ...group.branches,
+        {
+          userText: args.userText,
+          ecoText: undefined,
+          stopped: false,
+          cards: [],
+          state: "pending",
+          timestamp: args.timestamp,
+        },
+      ],
+    });
+    return newBranchIdx;
+  },
+});
+
+// Fills in the AI response on a specific branch.
+export const updateBranchResponse = mutation({
+  args: {
+    groupId: v.id("messageGroups"),
+    branchIndex: v.number(),
+    ecoText: v.optional(v.string()),
+    stopped: v.optional(v.boolean()),
+    responseMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const group = await ctx.db.get(args.groupId);
+    if (!group) throw new Error("Group not found");
+    const branches = group.branches.map((b, i) =>
+      i === args.branchIndex
+        ? {
+            ...b,
+            ecoText: args.ecoText ?? b.ecoText,
+            stopped: args.stopped ?? b.stopped ?? false,
+          }
+        : b
+    );
+    await ctx.db.patch(args.groupId, {
+      branches,
+      ...(args.responseMs !== undefined ? { responseMs: args.responseMs } : {}),
+    });
+  },
+});
+
+// Sets activeBranch (called from UI branch navigator < 1/2 >).
+export const setActiveBranch = mutation({
+  args: {
+    groupId: v.id("messageGroups"),
+    branchIndex: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.groupId, { activeBranch: args.branchIndex });
+  },
+});
+
+// Update cards on a specific branch (confirm / discard).
+export const updateBranchCards = mutation({
+  args: {
+    groupId: v.id("messageGroups"),
+    branchIndex: v.number(),
+    cards: v.array(v.any()),
+    state: v.optional(v.union(v.literal("pending"), v.literal("confirmed"), v.literal("editing"))),
+    workoutId: v.optional(v.id("workouts")),
+  },
+  handler: async (ctx, args) => {
+    const group = await ctx.db.get(args.groupId);
+    if (!group) throw new Error("Group not found");
+    const branches = group.branches.map((b, i) =>
+      i === args.branchIndex
+        ? {
+            ...b,
+            cards: args.cards,
+            ...(args.state !== undefined ? { state: args.state } : {}),
+            ...(args.workoutId !== undefined ? { workoutId: args.workoutId } : {}),
+          }
+        : b
+    );
+    await ctx.db.patch(args.groupId, { branches });
+  },
+});
+
+// Update likes on a group.
+export const updateGroupLikes = mutation({
+  args: {
+    groupId: v.id("messageGroups"),
+    likes: v.optional(v.union(v.literal("liked"), v.literal("disliked"))),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.groupId, { likes: args.likes });
   },
 });
 
@@ -101,7 +193,6 @@ export const getMessages = query({
 // SUMMARIES
 // ════════════════════════════════════════════════════════════════
 
-// Returns all summaries for a chat, oldest first.
 export const getSummaries = query({
   args: { chatId: v.id("chats") },
   handler: async (ctx, args) => {
@@ -113,7 +204,6 @@ export const getSummaries = query({
   },
 });
 
-// Saves a summary. Called by generateSummary action after Gemini responds.
 export const saveSummary = mutation({
   args: {
     chatId: v.id("chats"),
@@ -127,8 +217,6 @@ export const saveSummary = mutation({
   },
 });
 
-// Calls Gemini to summarise a batch of messages, then saves the result.
-// Triggered automatically by useEcoChat when message count hits a multiple of 10.
 export const generateSummary = action({
   args: {
     chatId: v.id("chats"),
@@ -141,18 +229,12 @@ export const generateSummary = action({
   handler: async (ctx, args) => {
     const conversation = args.messagesToSummarise
       .map(m => `User: ${m.userText}\nEco: ${m.ecoText}`)
-      .join('\n\n');
-
+      .join("\n\n");
     const prompt = `Summarise this workout conversation for future AI context.
-Focus on: exercises performed, weights used, personal records, and important user context (mood, injuries, goals).
-Be concise. Return only the summary text, no preamble.
-
-Conversation:
-${conversation}`;
-
+Focus on: exercises performed, weights used, personal records, and important user context.
+Be concise. Return only the summary text, no preamble.\n\nConversation:\n${conversation}`;
     const result = await model.generateContent(prompt);
     const summary = result.response.text();
-
     await ctx.runMutation(api.myFunctions.saveSummary, {
       chatId: args.chatId,
       userId: args.userId,
@@ -160,7 +242,6 @@ ${conversation}`;
       messageCount: args.messagesToSummarise.length,
       createdAt: Date.now(),
     });
-
     return summary;
   },
 });
@@ -169,9 +250,7 @@ ${conversation}`;
 // AI — WORKOUT PARSING
 // ════════════════════════════════════════════════════════════════
 
-// Main AI call. Takes user input + optional context string.
-// Context = summaries + last 5 messages (built in useEcoChat).
-export const callGemniniAPI = action({
+export const callGeminiAPI = action({
   args: {
     userInput: v.string(),
     context: v.optional(v.string()),
@@ -180,19 +259,17 @@ export const callGemniniAPI = action({
     try {
       const contextBlock = args.context
         ? `\n\nConversation context:\n${args.context}\n`
-        : '';
-
+        : "";
       const fullPrompt =
-        'System Prompt: ' + WORKOUT_PARSER_PROMPT +
+        "System Prompt: " + WORKOUT_PARSER_PROMPT +
         contextBlock +
-        '\nUser: ' + args.userInput;
-
+        "\nUser: " + args.userInput;
       const result = await model.generateContent(fullPrompt);
       return result.response.text();
     } catch (error) {
       console.error("Gemini API error:", error);
       return JSON.stringify({
-        action: 'chat_response',
+        action: "chat_response",
         message: "Sorry, I had trouble with that. Try again?",
         data: null,
       });
@@ -204,14 +281,8 @@ export const callGemniniAPI = action({
 // WORKOUTS — GROUPED EXERCISE SAVING
 // ════════════════════════════════════════════════════════════════
 
-// Step 1: Create the workout session header.
-// Called once when the FIRST card in a message is confirmed.
-// Returns the workoutId — stored on the message and reused for all
-// subsequent cards in that same message.
 export const createWorkoutSession = mutation({
-  args: {
-    userId: v.string(),
-  },
+  args: { userId: v.string() },
   handler: async (ctx, args) => {
     return await ctx.db.insert("workouts", {
       userId: args.userId,
@@ -220,22 +291,16 @@ export const createWorkoutSession = mutation({
   },
 });
 
-// Step 2: Add a single confirmed exercise to an existing workout session.
-// Called for EVERY card confirmed (using the workoutId from step 1).
 export const addExerciseToWorkout = mutation({
   args: {
     workoutId: v.id("workouts"),
     exercise: v.object({
       exerciseName: v.string(),
       sets: v.number(),
-      metricType: v.union(
-        v.literal('reps'),
-        v.literal('duration'),
-        v.literal('distance')
-      ),
+      metricType: v.union(v.literal("reps"), v.literal("duration"), v.literal("distance")),
       metricValue: v.number(),
       weight: v.optional(v.number()),
-      weightUnit: v.optional(v.union(v.literal('kg'), v.literal('lbs'))),
+      weightUnit: v.optional(v.union(v.literal("kg"), v.literal("lbs"))),
     }),
   },
   handler: async (ctx, args) => {
@@ -247,33 +312,13 @@ export const addExerciseToWorkout = mutation({
 });
 
 // ════════════════════════════════════════════════════════════════
-// MISC
-// ════════════════════════════════════════════════════════════════
-
-export const listNumbers = query({
-  args: { count: v.number() },
-  handler: async (ctx, args) => {
-    const workouts = await ctx.db
-      .query("workouts")
-      .order("desc")
-      .take(args.count);
-    return {
-      viewer: (await ctx.auth.getUserIdentity())?.name ?? null,
-      workouts: workouts.reverse(),
-    };
-  },
-});
-
-// ════════════════════════════════════════════════════════════════
 // AI FEEDBACK
 // ════════════════════════════════════════════════════════════════
 
-// Logs corrections the user makes to AI-parsed exercises.
-// Useful for future prompt tuning.
 export const aiFeedback = mutation({
   args: { corrections: v.array(v.any()) },
   handler: async (ctx, args) => {
-    await ctx.db.insert('aiFeedback', {
+    await ctx.db.insert("aiFeedback", {
       feedbackId: FAKE_USER_ID,
       systemPrompt: WORKOUT_PARSER_PROMPT,
       corrections: args.corrections,

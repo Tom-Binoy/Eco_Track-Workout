@@ -1,6 +1,6 @@
 // ─── Core exercise/card types ──────────────────────────────────
-export type MetricType = 'reps' | 'duration' | 'distance';
-export type WeightUnit = 'kg' | 'lbs';
+export type MetricType = "reps" | "duration" | "distance";
+export type WeightUnit = "kg" | "lbs";
 
 export interface Exercise {
   exerciseName: string;
@@ -11,28 +11,43 @@ export interface Exercise {
   weightUnit?: WeightUnit;
 }
 
-// A Card is an Exercise that lives inside a chat message
-// before (and after) it's saved to the workouts table.
-// id is a local number assigned when the AI parses exercises.
 export interface Card extends Exercise {
   id: number;
-  state: 'pending' | 'confirmed' | 'discarded';
+  state: "pending" | "confirmed" | "discarded";
 }
 
-// ─── Message type ──────────────────────────────────────────────
-// One Message = one full round trip (user says something, Eco replies).
-export interface Message {
-  id: string;       // Convex _id once saved; temp string before save
-  user: string;     // What the user said
-  eco: string;      // What Eco replied
-  cards?: Card[];   // Parsed exercises — only present if action === 'log_workouts'
-  state?: 'pending' | 'confirmed' | 'editing';
+// ─── Branch ────────────────────────────────────────────────────
+// One branch = one version of a conversation turn.
+// A group starts with branch[0]; each user edit adds branch[n].
+export interface Branch {
+  userText: string;
+  ecoText?: string;        // undefined = still loading; "" = loading; string = done
+  stopped?: boolean;       // true if user hit Stop during this branch's generation
+  cards?: Card[];
+  workoutId?: string;
+  state: "pending" | "confirmed" | "editing";
   timestamp: number;
 }
 
-// ─── AI response shape (what Gemini returns as JSON) ───────────
+// ─── Message Group ─────────────────────────────────────────────
+// One group = one position in the conversation (one user turn).
+// branches[] holds all versions (original + edits/regenerations).
+// The tree is formed by parentGroupId + parentBranchIndex.
+export interface MsgGroup {
+  id: string;                    // Convex _id
+  parentGroupId?: string;        // undefined = root (first message)
+  parentBranchIndex?: number;    // which branch of parent this group follows from
+  activeBranch: number;          // currently viewed branch index
+  branches: Branch[];
+  cards?: Card[];                // convenience — mirrors activeBranch's cards
+  likes?: "liked" | "disliked" | null;
+  responseMs?: number | null;
+  timestamp: number;
+}
+
+// ─── AI response shape ─────────────────────────────────────────
 export interface AIResponse {
-  action: 'log_workouts' | 'chat_response';
+  action: "log_workouts" | "chat_response";
   message: string;
   data: Exercise[] | null;
 }
