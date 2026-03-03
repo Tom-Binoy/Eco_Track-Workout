@@ -15,8 +15,8 @@ interface EcoChatProps {
   onStop: () => Promise<void>;
   onSetActiveBranch: (groupId: string, branchIndex: number) => Promise<void>;
   onLike: (groupId: string, likes: 'liked'|'disliked'|null) => void;
-  onConfirmCard: (groupId, cardId, data) => void;
-  onDiscardCard: (groupId, cardId) => void;
+  onConfirmCard: (groupId: string, cardId: number, data: Partial<Card>) => void;
+  onDiscardCard: (groupId: string, cardId: number) => void;
 }
 
 // ─── Claude.ai exact color tokens ─────────────────────────────
